@@ -523,6 +523,22 @@ old one (WCH `1a86:8095`, with the `1a86:5397` `cdc_ether` adapter and the NAS d
   `Source_Capabilities`, two hard resets, a non-PD `SNK_READY` in the device role, and `echo host > data_role` failed
   with `EINVAL`. `source` then `dual` is the order that works.
 
-**Not checked:** ten reboots in a row with either hub; the dock plugged into the running system by hand; a boot with
-the dock on `pkgrel 57`; 24 h without a restart on this image (the phone was restarted several times this day, twice by
-the hang above).
+**Not checked on `26111304`:** ten reboots in a row with either hub; the dock plugged into the running system by hand;
+24 h without a restart (the phone was restarted several times this day, twice by the hang above).
+
+### Image `26111401` (`pkgrel 57`) and ten reboots in a row (2026-11-14, evening)
+
+- **Build and delivery.** `scripts/duranium-image --image-version=26111401` (usrhash `621bfa1e`); inside the image
+  `pkgrel` 57 and the new line of `hanoip-usb-role`. The three files went over the tailnet with the resumable copy, the
+  hashes equal, then `systemd-sysupdate update`. `26111304` stays installed as the fallback.
+- **First boot.** `IMAGE_VERSION=26111401`, the old hub and everything on it at 480 Mbit/s, the default route on `eth0`,
+  100 of 100 pings and 0 TX errors, both NAS mounts, `smb` and `syncthing` active, `systemctl is-system-running`
+  `running`, nothing failed, no btrfs error.
+- **Ten reboots in a row** with the old hub on the cable, each one checked from the PC: the image, every device at 480,
+  `eth0` with its IPv4 address and the default route, the boot marked good, the system `running`. Ten of ten passed. In
+  each boot the port was still in the device role after the wait and the script reconnected it. After the tenth: both
+  NAS mounts, `smb` and `syncthing` active, no `BTRFS critical`, no `NETDEV WATCHDOG`, 0 TX errors.
+
+**Not checked on `26111401`:** a boot with the Realtek dock (the owner uses it elsewhere), so the `pkgrel 57` fix for a
+port that is already host is proven by `scripts/test-duranium-boot` alone; the dock plugged into the running system;
+24 h without a restart (`scripts/check-uptime`), counted from the last of the ten reboots.
