@@ -133,6 +133,28 @@ search `lan`). The script that reapplies this after a boot (`/etc/local.d/40-han
 (see "`/etc/local.d` does not run on Duranium" above), so a Tailscale that turns DNS back on is not undone at boot.
 `hanoip-status` still warns if `resolv.conf` shows the Tailscale DNS.
 
+### Reaching the home LAN from the tailnet (subnet route)
+
+The phone advertises the home LAN as a Tailscale subnet route, so the router's admin page and the other LAN devices answer
+over the tailnet, for example from a phone on the cellular network. The router itself does not run Tailscale: the package
+does not fit its 16 MiB flash. The phone is the gateway, so the route is up only while the phone is.
+
+Set it once. `tailscale up` refuses to change settings unless every non-default flag is repeated, so list them first:
+
+```sh
+tailscale debug prefs | grep -E '"(RouteAll|RunSSH|ShieldsUp|CorpDNS|ExitNodeID|AdvertiseRoutes)"'
+sudo tailscale up --accept-dns=false --advertise-routes=$HANOIP_LAN_SUBNET <the other non-default flags, if any>
+```
+
+Then approve the route in the admin console (Machines, the phone, Edit route settings), and on each client that should use
+it turn on "Use subnet routes" in the Tailscale app. Check from the cellular network with `http://$HANOIP_ROUTER_IP`.
+
+On the phone, the packaged fragment `52_hanoip-tailscale.nft` forwards from `tailscale0` and the replies from `eth*`; the
+forward chain has policy drop, so nothing else is forwarded. `tailscaled` starts after `nftables.service` (a systemd
+drop-in), but a reload of `nftables` after boot wipes Tailscale's `ts-forward` chains: run `sudo systemctl restart
+tailscaled` after any `systemctl restart nftables`. A PC already on the LAN reaches the router by the local route, so
+`tailscale ping` does not test the subnet route from there: test from outside.
+
 ## AdGuard Home (secondary DNS, issue #25)
 
 Its unit is enabled and waits for its restored config (`scripts/restore-server` puts the 4.14's `AdGuardHome.yaml` back).
@@ -173,11 +195,12 @@ Samba (139, 445) accepted only on `tailscale0`. `50_sshd.nft` is a symlink to pm
 | `50_sshd.nft` | pmOS | Accepts port 22 from everywhere; the file above wins first |
 | `51_hotspot.nft` | pmOS | Hotspot rules (accepts 53 on `wlan*`, used by AdGuard) |
 | `51_usb_inet.nft` | pmOS | Accepts **everything** coming in over `usb*` |
-| `52_hanoip-tailscale.nft` | this repo | Everything on `tailscale0`, UDP 41641 only on `eth*` and `wlan*` |
+| `52_hanoip-tailscale.nft` | this repo | Everything on `tailscale0`, forwarding from `tailscale0` to the LAN and its replies (the subnet route), UDP 41641 only on `eth*` and `wlan*` |
 
 Do not open a port, weaken a rule, enable password login or add a public-facing service without a decision. To change a
 rule on the running phone without wiping Tailscale's own tables, use `nft insert rule` and `nft replace rule`; a reload of
-`/etc/nftables.nft` starts with `flush ruleset`.
+`/etc/nftables.nft` starts with `flush ruleset` and also wipes Tailscale's `ts-forward` chains, so run `sudo systemctl
+restart tailscaled` after it.
 
 ## The screen
 
