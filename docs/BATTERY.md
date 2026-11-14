@@ -1,6 +1,6 @@
 # Battery life, component safety and heat on the Moto G60 (hanoip)
 
-Research of 2026-10-29 for the phone as an always-on server on the cable. Device readings come from the
+Research of 2026-10-29 for the phone as an always-on server on the cable, done on the downstream 4.14 server (the mainline gauge and `hanoip-charge` that replace `hanoip-qgd` are in [`HOMELAB.md`](HOMELAB.md)). Device readings come from the
 running phone (downstream 4.14, Cybertron); kernel facts come from the downstream source in
 `drivers/power/supply/qcom/` (`qpnp-smb5.c`, `smb5-lib.c`, `pmic-voter.c`). What was not measured on the
 phone is marked **unverified**.

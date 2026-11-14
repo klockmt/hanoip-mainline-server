@@ -1,20 +1,39 @@
-# postmarketOS on the Moto G60 (hanoip)
+# hanoip-mainline-server
 
-Work-in-progress port of postmarketOS to the **Motorola Moto G60** (`hanoip`, XT2135-1, Snapdragon 732G / SM7150), aiming to run it as a headless server.
+Mainline Linux and **Duranium** on the **Motorola Moto G60** (`hanoip`, XT2135-1, Snapdragon 732G / SM7150), run as a headless server reached over SSH. Duranium is [Nura's](https://gitlab.nura.eco/nura/duranium-build) postmarketOS-based image with systemd, an immutable `/usr` (erofs, dm-verity) and A/B updates with automatic rollback. The kernel is Linux 7.3 from kernel.org with this project's patches, started by a U-Boot built from this repository. Release **v1.0.0** (2026-11-14) is that system; the earlier downstream 4.14 postmarketOS server is frozen as v0.2.2 and kept at the end of this file.
 
-> **Warning:** this flashes `boot`, `vendor_boot` and `userdata` on a device with an unlocked bootloader, and **erases the phone**. Back it up first (step 2). Only slot `b` was tested. Nothing here is risk-free.
+> **Warning:** installing this writes `userdata` (and the two boot partitions) of a phone with an unlocked bootloader, and **erases it**. Back it up first. Nothing here is risk-free, and a clean-machine install of Duranium from a fresh phone has not been run end to end (see "What was verified").
 
 ## Status
 
 | Area | State |
 | --- | --- |
-| Downstream kernel (4.14, cool585 Cybertron) | **Works.** postmarketOS edge boots on its own with openrc, SSH over the USB network gadget, a 104 GB root on `userdata` and an nftables firewall |
-| Wi-Fi (WCN3990) | **Works (2026-10-30).** 2.4 and 5 GHz, WPA3 (SAE) through NetworkManager, back by itself after a reboot. It needed `CONFIG_MMI_INFO` (the modem crashed without the SMEM item that driver creates). The modem userspace ships in the `device-motorola-hanoip-modem` subpackage: see [`userspace/modem/README.md`](userspace/modem/README.md) |
-| Mainline kernel | **Boots from slot a through U-Boot with no PC (2026-11-08), not the server yet.** Linux 7.3 with this project's patches (`kernel/mainline`). Our U-Boot in `boot_a` reads the kernel from UFS and boots a root in super's free region: Wi-Fi through the modem, Tailscale, nftables, a 75-80 % charge limit. Slot a marks itself successful after a complete boot, so both slots work; slot b, the 4.14 above, is active again and stays the server until its services move ([`docs/STATUS.md`](docs/STATUS.md), section 5, and [`docs/MAINLINE.md`](docs/MAINLINE.md), sections 7 to 7d) |
+| Mainline kernel | **Runs the server.** Linux 7.3 (kernel.org tarball checked against `sha256sums.asc`, plus 195 patches in [`kernel/mainline`](kernel/mainline)), started by our U-Boot (`boot_b` holds the current build, `boot_a` still the one of 2026-11-08), 8 CPUs with cpufreq, hardware watchdog, UFS, USB host and gadget |
+| Duranium | **Runs the server.** Image `26111401` (device package `pkgrel 57`) in `userdata`, updated with `systemd-sysupdate`, automatic rollback tried on a broken boot entry and on a kernel panic, ten reboots in a row on `26111401`, the boot marked good each time. SSH over the USB cable and the tailnet only, keys only, no root login, no port open to the LAN ([`docs/DURANIUM.md`](docs/DURANIUM.md), [`docs/STATUS.md`](docs/STATUS.md)) |
+| Network | Wi-Fi (WCN3990, through the modem), Tailscale, nftables; Ethernet through a USB hub, with Wi-Fi switched off while it carries the server. The hub is plugged in at boot and works at 480 Mbit/s with the NAS disk mounted (ten reboots in a row) |
+| Server services | Charge limit (75-80 %), heat protection, Telegram bot, status dashboard (tailnet only), AdGuard Home, Samba, Syncthing, power LED, slot health mark: [`docs/HOMELAB.md`](docs/HOMELAB.md). Samba and Syncthing from a real client are still to be tested (#27) |
+| Stability | The owner reports more than 24 h in service with the dashboard working (2026-11-12 to 13); `scripts/check-uptime` checks a run on the phone |
+| Downstream 4.14 (pmOS, OpenRC) | Frozen as v0.2.2. Still described in the legacy section below; it no longer runs the server |
 
-The phone is reachable over Wi-Fi, the USB cable (network gadget) or a USB Ethernet adapter (RTL8152, ASIX, CDC). With a hub the phone is USB host: the PC on the hub cannot reach it over USB, so use Wi-Fi then.
+The phone is reachable over Wi-Fi, the tailnet, the USB cable (network gadget) or a USB Ethernet adapter. With a hub the phone is USB host: the PC on the hub cannot reach it over USB, so use Wi-Fi or the tailnet then.
 
-## Tutorial: reproduce the working image
+## How the system is put together
+
+1. **Kernel**: `scripts/build-mainline-kernel` (kernel.org 7.3 + `kernel/mainline/patches`, both trees checked by hash), or the pmaports package `linux-motorola-hanoip-mainline` that Duranium's image takes.
+2. **U-Boot**: `scripts/build-mainline-uboot` (upstream U-Boot plus the board diffs in `kernel/mainline/uboot/base`). It lives in the boot partitions (`boot_b` has the current build; `boot_a` is still on the previous one), finds `userdata` through `blkmap`, boots Duranium through EFI and falls back to an Alpine rescue root in `super` only if that fails.
+3. **Device package**: `device-motorola-hanoip` and its `-mainline` subpackage (units, preset, firewall, dashboard, bot). Built with `scripts/pmb build --force device-motorola-hanoip` (the user runs it: it asks for `sudo`).
+4. **Image**: `scripts/duranium-image --image-version=YYMMDDNN` builds it with `duranium-build` in a container, without touching the phone.
+5. **Delivery**: first install writes `userdata` (`scripts/duranium-write-userdata`, after `scripts/backup-server`, then `scripts/restore-server`); every later update goes over the network as an A/B update (`systemd-sysupdate`) with the old image kept as the fallback.
+
+The decisions, the order of the work, each step's evidence and how to make and deliver an update are in [`docs/DURANIUM.md`](docs/DURANIUM.md). The kernel and U-Boot work is in [`docs/MAINLINE.md`](docs/MAINLINE.md). Scripts that change something accept `DRY_RUN=1`; `ASSUME_YES=1` skips their questions. `scripts/check-repo` runs every `test-*` without the phone and must pass before a commit.
+
+On the phone, `hanoip-status` (and Telegram `/status`) prints the health of the phone in ten lines, and `hanoip-status -h` says what each is. The dashboard answers only on the phone's Tailscale address, port 8080 (see [`docs/HOMELAB.md`](docs/HOMELAB.md#status-dashboard)); `scripts/test-dashboard` and `scripts/test-dashboard-page` check both halves without the phone. What was measured about the battery is in [`docs/BATTERY.md`](docs/BATTERY.md).
+
+![fastfetch on the Moto G60 running Duranium: Linux 7.3.0-sm7150, aarch64, 3.47 GiB of RAM](docs/images/fastfetch-duranium.png)
+
+## Legacy: reproduce the 4.14 postmarketOS image (v0.2.2)
+
+This is the first server this repository built, on the downstream 4.14 kernel and OpenRC. It is kept because its scripts and the verification below were run on the real phone, but it **flashes `boot`, `vendor_boot` and `userdata` and erases the phone**, only slot `b` was tested, and the running server is Duranium above. Use the `v0.2.2` tag for it.
 
 Everything is scripted. Steps marked **[manual]** need your hands on the phone or an interactive prompt. The scripts that change something (`setup-pmaports`, `configure-pmbootstrap`, `build-image`, `setup-usb-net`, `flash-rootfs`, `flash-boot`, `flash-boot-ssh`, `setup-console`, `push-firmware`, `reboot-bootloader`, `mount-vendor`, `update-apkbuild-sums`, `restore-cycle-counts`, `backup-server`, `restore-server`) accept `DRY_RUN=1` (print the commands, change nothing), and `ASSUME_YES=1` skips their questions.
 
@@ -31,7 +50,7 @@ Everything is scripted. Steps marked **[manual]** need your hands on the phone o
 ### 1. Get the repo and configure
 
 ```sh
-git clone https://github.com/klockmt/hanoip-pmos.git hanoip && cd hanoip
+git clone https://github.com/klockmt/hanoip-mainline-server.git && cd hanoip-mainline-server
 cp .env.example .env      # [manual] set HANOIP_USER (the login name you will use) and adjust paths if you like
 scripts/check-host
 ```
@@ -144,22 +163,24 @@ I want to be clear about what has and has not been run end to end.
 | `restore-server` | Run on the author's phone on 2026-11-10, in a session that left no record of its output: on 2026-11-11 the restored data, the sudo password and `harden` (root login refused) were all found in place. Its step that sets the owner of Syncthing's folder ran while the NAS disk was away and had to be repeated by hand. It puts the 4.14 server's data (Wi-Fi profiles, Tailscale state, AdGuard Home, Samba, Syncthing, the bot's secrets) back on a fresh Duranium, sets the login user's sudo password and, last, turns root login off. Tested only against a simulated phone (`scripts/test-restore-server`: what is sent and what is not, owners and modes kept, no secret in any output, `harden` refusing without sudo) |
 | `hanoip-dashboard` (on the phone) | Run on the author's phone on 2026-11-12. Image `26111103` (`pkgrel 53`): the page and `/api/status` answer from the tailnet, the USB address refuses the connection, the LAN address does not answer; slot `b`, marked successful. Image `26111201` (`pkgrel 54`, the redesigned page and the live figures): answers in 0.25 to 0.4 s through a relayed tailnet link, with the CPU, power and network figures changing each second. The page itself was looked at in a headless browser at 1440, 390 and 360 px, light and dark, against a simulated server. Not seen: the page on a real phone screen or in another browser, and a NAS disk or a scrub result (the disk was not mounted) |
 | `duranium-image` | Run on the author's machine on 2026-11-11 (three times, device package r50 to r52): the image it built was checked with `dump.erofs`, delivered to the phone as an A/B update and is the running system (`docs/DURANIUM.md`). Pass `--image-version=YYMMDDNN` for an update, or the image keeps the old version. Not run on a clean machine |
+| Duranium on the phone (image `26111401`, 2026-11-14) | Built with `scripts/duranium-image`, delivered with `systemd-sysupdate`; ten reboots in a row with the hub on the cable, each checked from the PC (image, every USB device at 480 Mbit/s, `eth0` with a default route, boot marked good, system `running`); both NAS mounts active afterwards with no btrfs error. Not run: a clean machine, or a second person following [`docs/DURANIUM.md`](docs/DURANIUM.md), and Samba or Syncthing from a real client (#27) |
 | A completely fresh machine, start to finish | **Run to the image (2026-11-02), in a clean KVM virtual machine** (Ubuntu 24.04 cloud image, only apt packages and the README steps, from the `beta` branch): `check-host`, `setup-pmaports`, `build-kernel`, `pmb init`, `configure-pmbootstrap` and `build-image` all ran and produced `boot.img` (header v3), `vendor_boot.img` (command line starting with `console=ttyMSM0,115200n8`) and the 2 GB rootfs. It needed five changes to the README and scripts, all fixed above. **Not run:** the flashing and booting that image on a phone, which erases `userdata`, and a second person following the README. The first attempt in a rootless container stopped at `pmbootstrap init` (no `origin/main`), the second in a privileged one at the partitions (no udev), which is why a VM was used |
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on; `linux-motorola-hanoip-mainline`, the Linux 7.3 package built from kernel.org and copies of `kernel/mainline` (not built yet) |
+| `pmaports/` | `device-motorola-hanoip` and `linux-motorola-hanoip` packages, and `PMAPORTS_COMMIT`, the official pmaports commit they were built on; `linux-motorola-hanoip-mainline`, the Linux 7.3 package built from kernel.org and copies of `kernel/mainline`, which Duranium's image takes |
+| `kernel/mainline/` | This project's base for the mainline kernel and U-Boot: `patches/` (195, on top of kernel.org 7.3), `config-7.3-hanoip`, `server.config`, `extra/` (the `hanoip_mmi_unit_info` module), `uboot/` and `uboot/base/` (the U-Boot patches, board diffs and config), the root overlay of the Alpine rescue root |
 | `kernel/downstream-patches/` | Patches for the 4.14 kernel (loop partition rescan, `clk.c` for `DEBUG_FS`, `icnss` BDF/REGDB/`host_cap`, console on the screen, splash framebuffer, serial kept out of the `mmi_info` log) |
 | `kernel/dts/` | Mainline DTS for the hanoip |
 | `userspace/modem/` | Notes on the modem/Wi-Fi userspace for 4.14 (diagnosis history). The files themselves are the `device-motorola-hanoip-modem` subpackage |
 | `scripts/` | All the steps above, `check-repo` (self-check to run before every commit: checksums, patch copies, private-data scan, and every `test-*` regression test; none needs the phone), `push-firmware` and `mount-vendor` for the Wi-Fi investigation, and `collect-device` (runs in Termux on the phone) |
 | `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/` | How to report and how to change (what never goes in an issue, the commit and test rules) and the issue forms |
-| `docs/` | What works (`STATUS.md`), what broke and where it is kept from breaking again ([`PITFALLS.md`](docs/PITFALLS.md)), how the phone is run (`HOMELAB.md`), the battery study (`BATTERY.md`), verified device facts and sanitized dumps (`device-info/`) |
+| `docs/` | What works (`STATUS.md`), the Duranium plan and its log ([`DURANIUM.md`](docs/DURANIUM.md)), the mainline kernel and U-Boot work ([`MAINLINE.md`](docs/MAINLINE.md)), what broke and where it is kept from breaking again ([`PITFALLS.md`](docs/PITFALLS.md)), how the phone is run (`HOMELAB.md`), the battery study (`BATTERY.md`), verified device facts and sanitized dumps (`device-info/`) |
 | `NOTES.md` | Detailed working notes: pitfalls already solved, boot test results |
 
-## Pitfalls already solved (details in `NOTES.md`)
+## Pitfalls already solved (details in `NOTES.md`; the ones about 4.14, patches 0001-0010 and `qbootctl` apply to the legacy kernel)
 
 - The bootloader only runs **Android boot header v3**; the DTB, initramfs and cmdline live in `vendor_boot`, not in `boot`.
 - The ramdisk must be **LZ4 legacy**; gzip or zstd leave the phone stuck on the Motorola logo.
@@ -178,9 +199,3 @@ Partition backups, the device collection (serial, MAC and IMEI), and the proprie
 ## License
 
 GPL-2.0-only, see [`LICENSE`](LICENSE) for the text and [`NOTICE`](NOTICE) for the scope. The kernel patches and the device-tree sources are derived from the Linux kernel; the packaging, scripts and documentation use the same license. Proprietary firmware and device identifiers are not part of the repository.
-
-## Duranium running
-
-`fastfetch` on the phone after the first boot of the mainline image: Linux 7.3.0-sm7150 on aarch64, `/usr` on a read-only erofs, the rootfs on `userdata`, Wi-Fi up.
-
-![fastfetch on the Moto G60 running Duranium: Linux 7.3.0-sm7150, aarch64, 3.47 GiB of RAM](docs/images/fastfetch-duranium.png)

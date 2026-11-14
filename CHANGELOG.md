@@ -10,6 +10,20 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-14
+
+Documentation only. Nothing in the image, the packages, the scripts or the phone changed: v1.0.0 is still the system that runs.
+
+### Changed
+- The repository is `hanoip-mainline-server` (it was `hanoip-pmos`): `README.md`, `AGENTS.md`, `NOTICE`, `NOTES.md`, `CONTRIBUTING.md`, the issue template link and the compare links in `CHANGELOG.md` use the new name; GitHub redirects the old one. The patch files under `kernel/mainline/uboot` keep the old name in their text, because their hashes are checked.
+- The documentation is about Duranium on mainline Linux, not plain postmarketOS: `README.md` opens with what runs now (Duranium image `26111401`, Linux 7.3, our U-Boot), how the pieces fit and what was verified, and keeps the 4.14 tutorial as a legacy section (v0.2.2); `AGENTS.md` "Server setup" describes the systemd services and the image and update flow instead of OpenRC; `docs/STATUS.md`, `docs/DURANIUM.md`, `docs/MAINLINE.md`, `docs/HOMELAB.md` and `docs/BATTERY.md` say which parts are history of the 4.14 server and which hold now.
+
+### Tested
+`scripts/check-repo` (every `test-*`, none needs the phone) passed on the commit that is tagged. Nothing was run on the phone: the text was checked against the repository and the earlier notes, not against the device.
+
+### Known issues
+The README has no step-by-step install of Duranium on a phone that has never run it; it says so. Samba and Syncthing from a real client (#27) and the new U-Boot in `boot_a` are still to be checked.
+
 ## [1.0.0] - 2026-11-14
 
 The move from the downstream 4.14 server to the mainline one: Linux 7.3 from kernel.org with this project's patches,
@@ -313,23 +327,24 @@ The downstream 4.14 server as it runs on the phone, tagged before the mainline w
 ### Added
 - First release: a working phone with boot, screen, kernel and device package only.
 
-[Unreleased]: https://github.com/klockmt/hanoip-pmos/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.2...v1.0.0
-[0.2.2]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.14...v0.2.0
-[0.1.14]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.13...v0.1.14
-[0.1.13]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.12...v0.1.13
-[0.1.12]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.11...v0.1.12
-[0.1.11]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.10...v0.1.11
-[0.1.10]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.9...v0.1.10
-[0.1.9]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.8...v0.1.9
-[0.1.8]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.7...v0.1.8
-[0.1.7]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.6...v0.1.7
-[0.1.6]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.5...v0.1.6
-[0.1.5]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.4...v0.1.5
-[0.1.4]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.3...v0.1.4
-[0.1.3]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.2...v0.1.3
-[0.1.2]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.1...v0.1.2
-[0.1.1]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/klockmt/hanoip-pmos/releases/tag/v0.1.0
+[Unreleased]: https://github.com/klockmt/hanoip-mainline-server/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/klockmt/hanoip-mainline-server/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.2.2...v1.0.0
+[0.2.2]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.14...v0.2.0
+[0.1.14]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.13...v0.1.14
+[0.1.13]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.12...v0.1.13
+[0.1.12]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.11...v0.1.12
+[0.1.11]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.5...v0.1.6
+[0.1.5]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.4...v0.1.5
+[0.1.4]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/klockmt/hanoip-mainline-server/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/klockmt/hanoip-mainline-server/releases/tag/v0.1.0

@@ -1,6 +1,6 @@
-# hanoip-pmos
+# hanoip-mainline-server: working notes
 
-postmarketOS port for the **Moto G60 (hanoip, XT2135-1)**: a working downstream-kernel (4.14) build, to become our own hardened server kernel; the mainline-kernel effort is parked (`docs/STATUS.md`, section 5).
+Log of the Moto G60 (hanoip, XT2135-1) and its investigations. The server runs Linux 7.3 from kernel.org with Duranium (see `docs/DURANIUM.md`). The entries below are dated and kept as they were written; the older ones are about the downstream 4.14 pmOS server, frozen as v0.2.2.
 
 The rules (commits, personal data, flashing, SSH and security, tests for bugs) are in `AGENTS.md`. This file is the log of the device and its investigations; what works is in `docs/STATUS.md`.
 
