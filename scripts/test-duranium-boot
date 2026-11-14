@@ -74,6 +74,11 @@ usbrole no "not attached"
 roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
 [ "$(cat "$role")" = device ] || fail "nothing on the cable, but the role was changed"
 [ "$(cat "$typec/port0/port_type")" = '[dual] source sink' ] || fail "the Type-C port was reconnected with nothing on the cable"
+# A dock that takes the host role by itself (PD data-role swap) is host before this script runs, with its disk mounted and
+# Ethernet up (Realtek dock, 2026-11-14): a reconnection there pulls the disk from under a mounted filesystem.
+usbrole yes "not attached"; echo host > "$role"
+roleenv sh "$d/hanoip-usb-role" boot || fail "the USB role script failed at boot"
+[ "$(cat "$typec/port0/port_type")" = '[dual] source sink' ] && ! grep -q 'reconnecting the Type-C port' "$calls" || fail "the Type-C port was reconnected at boot although it already had the host role (the mounted disk is pulled)"
 # Once the hub is unplugged the port goes back to the device role and the gadget comes back, so a PC plugged in later works.
 echo host > "$role"; rm -rf "$typec/port0-partner"; : > "$calls"
 roleenv sh "$d/hanoip-usb-role" watch || fail "the USB role script failed while watching"
