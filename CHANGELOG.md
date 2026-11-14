@@ -10,6 +10,12 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 
 ## [Unreleased]
 
+### Added
+- Subnet route to the home LAN: the phone advertises the LAN to the tailnet, so the router's admin page opens from a phone on the cellular network. `52_hanoip-tailscale.nft` forwards from `tailscale0` and the replies from `eth*`, and `device-motorola-hanoip` (pkgrel 58) removes the hand-made `53_hanoip-tailscale-forward.nft` on install and upgrade. Checked by the owner on 2026-11-14 (`docs/HOMELAB.md`, "Reaching the home LAN from the tailnet"); `scripts/test-firewall` checks the rule without the phone.
+
+### Fixed
+- `tailscaled` starts after `nftables.service` (a systemd drop-in in `device-motorola-hanoip`): a reload of nftables wipes the `ts-forward` chains Tailscale adds, and the subnet route stopped working until `tailscaled` was restarted. `scripts/test-firewall` checks the drop-in and its install line.
+
 ## [1.0.1] - 2026-11-14
 
 Documentation only. Nothing in the image, the packages, the scripts or the phone changed: v1.0.0 is still the system that runs.
