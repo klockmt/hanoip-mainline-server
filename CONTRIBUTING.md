@@ -1,6 +1,6 @@
 # Contributing
 
-This is a postmarketOS port to one phone (Motorola Moto G60, `hanoip`), run as a headless server. Help is welcome:
+This is mainline Linux and Duranium (postmarketOS with systemd) on one phone (Motorola Moto G60, `hanoip`), run as a headless server. Help is welcome:
 reports from your own unit, fixes, tests and docs. Read [`docs/STATUS.md`](docs/STATUS.md) (what works),
 [`docs/PITFALLS.md`](docs/PITFALLS.md) (what broke and where it is kept from breaking again) and
 [`docs/HOMELAB.md`](docs/HOMELAB.md) (how the phone is run) first.

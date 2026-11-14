@@ -1,6 +1,6 @@
-hanoip-pmos: postmarketOS port for the Motorola Moto G60 (hanoip)
+hanoip-mainline-server: mainline Linux and Duranium server for the Motorola Moto G60 (hanoip)
 
-Copyright (C) 2026 hanoip-pmos contributors
+Copyright (C) 2026 hanoip-mainline-server contributors
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License version 2 only, as published by the
