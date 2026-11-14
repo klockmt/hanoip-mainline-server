@@ -60,6 +60,16 @@ if [ -f "$ts" ]; then
 	done
 fi
 
+# tailscaled must start after nftables: nftables.service reloads /etc/nftables.nft, which starts with "flush ruleset",
+# and that wipes the chains Tailscale adds (ts-forward). A tailscaled started before the reload has none of them.
+ov=$pkg/hanoip-tailscaled-override.conf
+if [ ! -f "$ov" ]; then fail "$ov is missing"; else
+	grep -qx 'After=nftables.service' "$ov" || fail "$ov does not order tailscaled after nftables.service"
+	grep -qx '\[Unit\]' "$ov" || fail "$ov has no [Unit] section"
+	grep -qF '"$srcdir/hanoip-tailscaled-override.conf" "$pkgdir/etc/systemd/system/tailscaled.service.d/override.conf"' $pkg/APKBUILD ||
+		fail "the APKBUILD does not install the tailscaled override"
+fi
+
 # Samba: 51_usb_inet.nft accepts all of USB, so the share needs its own drop, loaded before it, and only the tailnet in.
 smb=$pkg/hanoip-samba.nft
 if [ ! -f "$smb" ]; then fail "$smb is missing"; else
