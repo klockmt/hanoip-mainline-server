@@ -6,8 +6,8 @@ how it is updated and how to get it back. What works is in [`STATUS.md`](STATUS.
 [`../NOTES.md`](../NOTES.md). Paths and addresses are variables from `.env` (`.env.example` lists them): nothing about
 your phone goes in the repository.
 
-The phone runs the 4.14 server's job on a mainline 7.3 kernel with systemd, from the image `26111201` (device package
-`pkgrel 54`) on slot b. The 4.14 server (OpenRC, chrony) is frozen as v0.2.2 on `main`; its old OpenRC notes are in the
+The phone runs the 4.14 server's job on a mainline 7.3 kernel with systemd, from the image `26111401` (device package
+`pkgrel 57`). The 4.14 server (OpenRC, chrony) is frozen as v0.2.2 on `main`; its old OpenRC notes are in the
 git history of this page, not here.
 
 ## Reaching it

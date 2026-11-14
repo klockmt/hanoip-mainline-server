@@ -1,9 +1,10 @@
 # The mainline kernel attempt
 
 The mainline kernel on the hanoip. The first attempt (6.6, 6.13.4, 7.1-rc3, booted straight from the ABL) never ran a
-kernel, as recorded on 2026-10-24 (sections 1 to 6). **Since 2026-11-07 Linux 7.3 runs on this phone RAM-only**, through
-a U-Boot built for it (section 7); it is not a server yet. The phone runs the downstream 4.14 kernel meanwhile; what works
-today is in [`STATUS.md`](STATUS.md) and the roadmap is GitHub issue #6. The pitfalls of the pmOS flow itself are in
+kernel, as recorded on 2026-10-24 (sections 1 to 6). **Since 2026-11-07 Linux 7.3 runs on this phone** through a
+U-Boot built for it (section 7), RAM-only at first, and **since 2026-11-11 it is the server**, running Duranium
+([`DURANIUM.md`](DURANIUM.md)). Sections 7 to 7e are the log of how it got there; what works today is in
+[`STATUS.md`](STATUS.md) and the roadmap is GitHub issue #6. The pitfalls of the pmOS flow itself are in
 [`PITFALLS.md`](PITFALLS.md).
 
 **Resumed on 2026-11-07** ([`STATUS.md`](STATUS.md), section 5), after being parked on 2026-11-02. The new start is

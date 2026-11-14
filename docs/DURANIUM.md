@@ -5,6 +5,15 @@ Hand-off for the work that follows the persistent mainline boot (2026-11-08). Re
 or a flashing script. Steps are in order. Each one ends with a test (`scripts/test-*`), a commit on `beta` and, when
 it touches the phone, evidence written into `docs/MAINLINE.md`.
 
+## Current state (2026-11-14, release v1.0.0)
+
+Duranium is the running server: image `26111401` (device package `pkgrel 57`, kernel 7.3.0) in `userdata`, `26111304` as
+the fallback, delivered with `systemd-sysupdate`. Everything below is the plan and the dated log of how it got there;
+where an older section says "not built" or "still open", the later sections and [`STATUS.md`](STATUS.md) hold. The most
+recent are "Where it stands (2026-11-12)", "Update 26111103", "Update 26111201", "USB host at 480 Mbit/s with two hubs"
+and "Image `26111401`". Still to do: Samba and Syncthing from a real client (#27), the new U-Boot in `boot_a`, and the
+tests that break a boot on purpose beyond the ones already run.
+
 ## What the user decided
 
 - **2026-11-07:** mainline is the goal. Its base (the kernel patches, configs and U-Boot board diffs) is this
