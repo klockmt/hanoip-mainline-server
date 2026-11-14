@@ -46,6 +46,20 @@ if [ ! -f "$ts" ]; then fail "$ts is missing"; else
 	if unshare -rn true 2>/dev/null; then unshare -rn nft -c -f "$ts" || fail "nft rejects $ts"; fi
 fi
 
+# The subnet route: tailnet traffic may be forwarded to the home LAN (the router's admin page), and nothing else.
+# The phone's forward chain has policy drop, so the chain must name tailscale0; a bare accept would open the LAN to all.
+if [ -f "$ts" ]; then
+	fwd=$(sed -n '/chain forward {/,/^[[:space:]]*}[[:space:]]*$/p' "$ts")
+	[ -n "$fwd" ] || fail "$ts has no forward chain: the tailnet cannot reach the home LAN"
+	printf '%s\n' "$fwd" | grep -q 'iifname "tailscale0" accept' || fail "the forward chain does not accept tailnet traffic"
+	if printf '%s\n' "$fwd" | grep 'accept' | grep -qv 'iifname'; then fail "the forward chain accepts traffic without naming the interface"; fi
+	# A package-owned fragment is loaded by name, so the hand-made file it replaces must go on upgrade too.
+	for h in post-install post-upgrade; do
+		grep -q 'rm -f /etc/nftables.d/53_hanoip-tailscale-forward.nft' "$pkg/device-motorola-hanoip.$h" 2>/dev/null ||
+			fail "$h does not remove the hand-made 53_hanoip-tailscale-forward.nft"
+	done
+fi
+
 # Samba: 51_usb_inet.nft accepts all of USB, so the share needs its own drop, loaded before it, and only the tailnet in.
 smb=$pkg/hanoip-samba.nft
 if [ ! -f "$smb" ]; then fail "$smb is missing"; else
