@@ -483,3 +483,46 @@ is therefore **not measured yet**; it is open until one boot reaches 24 h.
 
 **Not checked:** the page on a real phone screen and in another browser, the load of an hour of open page on the
 phone, ten reboots of this image.
+
+## USB host at 480 Mbit/s with two hubs (2026-11-14, image `26111304`, `pkgrel 56`)
+
+Measured on the phone over the tailnet, kernel 7.3.0, the device tree of U-Boot. Two hubs were on the cable in turn: the
+old one (WCH `1a86:8095`, with the `1a86:5397` `cdc_ether` adapter and the NAS disk `152d:0583`) and a Realtek dock
+(hub `05e3:0610`, `0bda:8153` `r8152`, the same disk).
+
+- **Realtek dock, boot with the dock on the cable.** The dock swaps the data role by itself (PD), so the port is host
+  before `hanoip-usb-role boot` looks: hub at 480 Mbit/s 3.6 s into the boot, both NAS mounts at 13.9 s, the `eth0`
+  lease at 15 s, Wi-Fi off at 20 s. At 32.7 s the script, which did not look at the role, reconnected the Type-C port:
+  `BTRFS critical ... device id 1 has gone missing`, `emergency shutdown`, both mounts dead, `smb` and `syncthing` down.
+  It happened on every boot with this dock. Fixed in `pkgrel 57` (the script returns when the role is already host);
+  the fix is proven by `scripts/test-duranium-boot` alone, **no image with it was built**.
+- **Realtek dock, after the reconnection.** Host at 480, `eth0` with its lease, `ping -I eth0` to the gateway 0% loss,
+  0 TX errors; the same after two more reconnections by hand (port type `source`, then `dual`).
+- **Old hub, plugged into the running system** (the owner swapped the hubs): the hub got the host role by itself,
+  everything at 480. 700 pings of 1400 bytes at 10 ms: 3 lost, 0 TX errors. A raw read of the disk over UAS: 400 MiB at
+  30.2 MB/s, and 600 MiB at 30.7 MB/s while 1500 such pings ran with none lost.
+- **Old hub, a reconnection by hand** with the NAS unmounted: host at 480 again, 200 of 200 pings.
+- **Old hub, one reboot with the hub on the cable.** The port stays in the device role until the script reconnects it at
+  30.7 s; the hub is up at 480 at 35.9 s, the `eth0` lease at 41.9 s, both NAS mounts at 42.3 s, Wi-Fi off at 47 s; `smb`
+  and `syncthing` active, 300 of 300 pings, 0 TX errors. So this hub needs the reconnection at boot and the dock must not
+  get it.
+- **Internet through the old hub's Ethernet** (default route on `eth0`): three downloads of 25 MB at 89.6 to 89.9
+  Mbit/s and an upload of 20 MB at 89.7 Mbit/s, the adapter at 480 and no RX error. The equal figures look like a
+  100 Mbit/s ceiling (the adapter or the line); which one was not checked.
+- **The Ethernet that could not transmit at 480** (old hub, the morning of the same day: `NETDEV WATCHDOG` tx timeouts,
+  no DHCP lease after a reconnection) **did not come back** in any of the three cases above. Its cause is not known.
+- **The PHY values.** The mainline `phy-qcom-qusb2` table for this PHY differs from what the 4.14 writes: `PORT_TUNE1`
+  `0x30` against `0x37` plus the trim of the efuse (bits 25 to 27 at `0x780200`; the U-Boot tree has no `nvmem-cells`
+  for it), and `IMP_CTRL2` `0x58` against `0x18`. Nothing was changed: 480 with a working transmit side was measured
+  with the mainline values. A function trace showed that a role switch never runs `qusb2_phy_init` again, only
+  `qusb2_phy_set_mode`.
+- **Reading the PHY registers through `/dev/mem` hangs the phone.** Three reads in a row worked while the port had
+  nothing enumerated; one in the device role and one in the working host state stopped the phone, and the watchdog
+  restarted it both times. The function tracer and `/sys/kernel/debug/usb/tcpm-*/log` gave what was needed without it.
+- **A port reset from the sink state** (port type `sink`, then `dual`) left the dock silent on PD: no
+  `Source_Capabilities`, two hard resets, a non-PD `SNK_READY` in the device role, and `echo host > data_role` failed
+  with `EINVAL`. `source` then `dual` is the order that works.
+
+**Not checked:** ten reboots in a row with either hub; the dock plugged into the running system by hand; a boot with
+the dock on `pkgrel 57`; 24 h without a restart on this image (the phone was restarted several times this day, twice by
+the hang above).
