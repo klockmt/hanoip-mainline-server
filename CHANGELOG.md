@@ -2,13 +2,20 @@
 
 All notable changes to this project are written here, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions follow
-[Semantic Versioning](https://semver.org/). While the version is below 1.0 the project is not stable yet:
-the interface (install and flash scripts, `.env` variables, device package) may change between releases.
+[Semantic Versioning](https://semver.org/). While the version was below 1.0 the project was not stable yet:
+the interface (install and flash scripts, `.env` variables, device package) changed between releases.
 
 Up to v0.1.14 the notes lived only in the message of each annotated tag; this file condenses them.
 `git tag -n99 <tag>` shows the original text, including what was and was not tested.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-11-14
+
+The move from the downstream 4.14 server to the mainline one: Linux 7.3 from kernel.org with this project's patches,
+started by U-Boot, running Duranium (postmarketOS with systemd, an immutable `/usr` with A/B updates and an automatic
+rollback) as a headless server reached over SSH. The 4.14 server stays described as v0.2.2. No image, APK or update file
+is attached to the release: they are built locally with the scripts in this repository.
 
 ### Added
 - `hanoip-ethernet-wifi.service` in `device-motorola-hanoip` (pkgrel 56): Wi-Fi goes off while eth0 has carrier, an IPv4 address and a default route through it, and comes back on when any of the three is gone, including at boot without Ethernet. It polls once a second and changes the radio only after five samples in a row agree, so a flapping cable does not toggle it. `scripts/test-ethernet-wifi` checks it with stand-ins (not on the phone).
@@ -60,7 +67,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ### Fixed
 - `hanoip-usb-recover` brings the NAS disk back when the USB hub under the Type-C port drops: on a new `HC died`, the hub gone while the partner stays on the cable, or a NAS mount gone read-only, it stops Samba and Syncthing, unmounts the disk, rebinds the xHCI and, while the hub is still missing, cycles the port's role and the port, then mounts the disk and starts the services again. It acts only in the host role with a partner on the cable (never with a PC) and at most three times an hour. `scripts/test-duranium-boot` ("USB recovery") checks it without the phone; the live test is pending (#28).
 - A hub that is on the cable at boot comes up at 480 Mbit/s instead of 12: `hanoip-usb-role boot` reconnects the Type-C port (port type `source`, then `dual`), which works like a replug, instead of only switching the role; `hanoip-usb-recover` does the same after the xHCI rebind. `scripts/test-duranium-boot` fails without it (#3).
-- `hanoip-usb-role boot` (pkgrel 57) leaves the port alone when it already has the host role. A dock that swaps the data role by itself (a Realtek RTL8153 dock, 2026-11-14) was host at 480 Mbit/s 4 s into the boot, with the NAS disk mounted and Ethernet up, and the reconnection 20 s later pulled the disk from under btrfs (`emergency shutdown`): both NAS mounts, Samba and Syncthing stayed down after every boot. `scripts/test-duranium-boot` fails without it (#3).
+- `hanoip-usb-role boot` (pkgrel 57) leaves the port alone when it already has the host role. A hub that takes the host role by itself is up at 480 Mbit/s a few seconds into the boot, with the NAS disk mounted and Ethernet up, and the reconnection 20 s later pulled the disk from under btrfs (`emergency shutdown`): both NAS mounts, Samba and Syncthing stayed down after the boot. `scripts/test-duranium-boot` fails without it (#3).
 - The USB-C port gets the host role at boot when a hub is on the cable and no PC enumerates the gadget (`hanoip-usb-role boot`, after `hanoip-usb-gadget`), so the hub's Ethernet and disk come up without a replug. The host role is given back to the device role when the hub is unplugged (`hanoip-usb-role-watch`), and the gadget steps aside while the port has the host role. `scripts/test-duranium-boot` ("USB role at boot") fails without them (#28).
 - `hanoip-health` counts an IPv4 address on `eth0` as reachable, like `usb0` and `wlan0`. With Wi-Fi down and the hub in the host role, a phone reachable only over Ethernet was never marked good and rebooted ten minutes into every boot. `scripts/test-duranium-boot` ("Ethernet only") fails on the old script.
 - Root no longer gets an `authorized_keys` at boot: `scripts/duranium-image` wrote a tmpfiles `C` line for `/root/.ssh`, so the server key came back after `harden`. The login user's lines are unchanged. `scripts/test-duranium-image` fails on the old script. A stale `/root/.ssh/authorized_keys` already on a phone must be removed once.
@@ -91,6 +98,21 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 - The mainline root sets its clock: the PMIC RTC reads 1974, and chronyd, started before the Wi-Fi, had no source, which also kept Tailscale logged out (TLS). `swclock` replaces `hwclock` and a NetworkManager dispatcher script restarts chronyd when a connection comes up; `scripts/test-mainline-root` covers both (#6).
 - `scripts/env.sh` no longer prints the values of `.env` when a script runs under `sh -x`: the trace of its `eval` showed every value, passwords included. `scripts/test-env-xtrace` covers it.
 - elogind no longer hangs a CPU on the 4.14 kernel: its memory-pressure trigger corrupted a list in `psi_trigger_create` on three boots in a row, leaving the server with slow SSH logins and a `reboot` that hangs. The device package (`pkgrel` 41) overrides elogind's D-Bus service file to start it with `MEMORY_PRESSURE_WATCH=/dev/null`; `scripts/test-elogind` covers it (#31).
+
+### Tested
+- `scripts/check-repo` passes.
+- On the phone, image `26111401` (kernel 7.3.0, device package `pkgrel 57`), 2026-11-14: ten reboots in a row with the USB hub on the cable, each one checked from the PC. Every boot came up on that image with the hub, the NAS disk and the Ethernet adapter at 480 Mbit/s, `eth0` with its address and the default route, the boot marked good and `systemctl is-system-running` at `running`. After the tenth both NAS mounts, Samba and Syncthing were up, with no btrfs error and no transmit error on `eth0`.
+- The USB hub, the same day: plugged into the running system, after a Type-C reconnection and after a reboot, everything at 480 Mbit/s. 1500 pings of 1400 bytes through `eth0` with none lost while the disk was read at 30.7 MB/s over UAS; about 90 Mbit/s of internet in each direction through the hub's Ethernet.
+- On image `26111303`: the loss of Wi-Fi, the watchdog (it restarts a hung phone after about 20 s) and a boot with sshd held off, each with its recovery (`docs/STATUS.md`).
+- Earlier images: the A/B update and its automatic rollback from a broken boot entry, a kernel panic, `/status` from Telegram, the status dashboard on the tailnet (`docs/DURANIUM.md`).
+
+### Known issues
+- On 2026-11-14 the hub's Ethernet could not transmit at 480 Mbit/s after one reconnection (`NETDEV WATCHDOG`, no DHCP lease). It did not come back in any later test and its cause is not known (#3).
+- The USB hub can re-enumerate and leave the mounted disk read-only until it is mounted again; `hanoip-usb-recover` knows one hub model only (#28).
+- A hub plugged in after the boot gets its disk mounted only by hand: the NAS mounts are tried at boot.
+- Reading the USB PHY registers through `/dev/mem` hangs the phone until the watchdog restarts it (`docs/PITFALLS.md`).
+- The phone keeps sourcing VBUS to a USB hub that has no power of its own and drains the battery (#30).
+- The share and Syncthing were not tested from real clients (#27); there is no backup of the NAS disk yet (#26).
 
 ## [0.2.2] - 2026-11-07
 
@@ -291,7 +313,8 @@ The downstream 4.14 server as it runs on the phone, tagged before the mainline w
 ### Added
 - First release: a working phone with boot, screen, kernel and device package only.
 
-[Unreleased]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/klockmt/hanoip-pmos/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.2...v1.0.0
 [0.2.2]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/klockmt/hanoip-pmos/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/klockmt/hanoip-pmos/compare/v0.1.14...v0.2.0
