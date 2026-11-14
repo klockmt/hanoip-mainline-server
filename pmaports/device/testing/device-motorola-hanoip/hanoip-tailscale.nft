@@ -7,4 +7,10 @@ table inet filter {
 		iifname "eth*" udp dport 41641 accept comment "Tailscale direct connections over Ethernet"
 		iifname "wlan*" udp dport 41641 accept comment "Tailscale direct connections over Wi-Fi"
 	}
+	# Subnet route: the home LAN is advertised to the tailnet, so tailnet traffic may be forwarded to it. Replies from
+	# the LAN come back on the established rule, and the second rule keeps them explicit here.
+	chain forward {
+		iifname "tailscale0" accept comment "Forward tailnet traffic to the home LAN"
+		iifname "eth*" oifname "tailscale0" accept comment "Return LAN traffic to the tailnet"
+	}
 }
