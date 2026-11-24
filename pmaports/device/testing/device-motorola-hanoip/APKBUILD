@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=58
+pkgrel=59
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -94,6 +94,7 @@ source="
 	hanoip-battery
 	hanoip-ml-up.service
 	hanoip-ml-networkmanager.conf
+	hanoip-arp.conf
 	hanoip-ml-chrony
 	90-hanoip-watchdog.conf
 	hanoip-ml-abl-slot
@@ -213,6 +214,7 @@ package() {
 	install -Dm755 "$srcdir/hanoip-battery" "$pkgdir/usr/bin/hanoip-battery"
 	install -Dm644 "$srcdir/hanoip-ml-up.service" "$pkgdir/etc/systemd/system/hanoip-ml-up.service"
 	install -Dm644 "$srcdir/hanoip-ml-networkmanager.conf" "$pkgdir/etc/NetworkManager/conf.d/hanoip-ml.conf"
+	install -Dm644 "$srcdir/hanoip-arp.conf" "$pkgdir/etc/sysctl.d/90-hanoip-arp.conf"
 	install -Dm755 "$srcdir/hanoip-ml-chrony" "$pkgdir/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony"
 	install -Dm644 "$srcdir/90-hanoip-watchdog.conf" "$pkgdir/etc/systemd/system.conf.d/90-hanoip-watchdog.conf"
 	install -Dm755 "$srcdir/hanoip-ml-abl-slot" "$pkgdir/usr/bin/hanoip-ml-abl-slot"
@@ -341,7 +343,7 @@ mainline() {
 		usr/bin/hanoip-guard usr/bin/hanoip-deadman usr/bin/hanoip-battery \
 		usr/bin/hanoip-ml-abl-slot usr/bin/hanoip-ml-charge \
 		etc/modprobe.d/hanoip-ml.conf \
-		etc/NetworkManager/conf.d/hanoip-ml.conf \
+		etc/NetworkManager/conf.d/hanoip-ml.conf etc/sysctl.d/90-hanoip-arp.conf \
 		etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony \
 		usr/bin/hanoip-usb-gadget etc/systemd/system/hanoip-usb-gadget.service \
 		usr/bin/hanoip-usb-role etc/systemd/system/hanoip-usb-role.service etc/systemd/system/hanoip-usb-role-watch.service \
@@ -419,7 +421,8 @@ ace468554ecfaac9daef10e75acada7c9c9e5b76d818a4e0b4a31c47de62701da2013def363e37d7
 97526ea1e42ad7a3cd649a5701e4c4b1fb492ba57564a33fb0fcc6a5d5079a1a0800caeb9566c968a606602a16c5c896e2225f03ec80657d850de4fa8ee9e6c6  hanoip-battery.service
 2b40a94535215717bb77805a63262f8f2cf9a117273a847b354d2fa9d2d0516b53113841b1ae66901b0415b884a556d8ab4e3305cff4ec38927c927eb9debc7f  hanoip-battery
 1d2bc548ec0ae0351aa303e8e9d71daecba6a9acbc1bb23af67ca4f875aadd15a125267eb4f588a1da3d3eca77a0b631759929bb662f974f56db6c60f0f322a9  hanoip-ml-up.service
-bdb9ce098d217ec2cfb34e01afa7f24966f1988592f579cda243f7e21ad182919e52890e45338ea3bcfff14a9914908e2f337963b704e15e10e00aef8c1fba74  hanoip-ml-networkmanager.conf
+0140ded190ff7739c8df9b7c6009afdfa666d60cb01de5b485ad92d65166eea137731bda1ad8dc97a52f3fff0e8f1f0118aa922636aba2b36affdac69bda1002  hanoip-ml-networkmanager.conf
+d3d72219d031741b5fe7b6fff6e771dc2b4fdcf5870dd5b3a27423f2ba900fc4abeab7f42afed33c3f765ff1ab9e149c0c02b487b73c44e860ef7d2ed72cb306  hanoip-arp.conf
 fe1de4984e9fbd01f2d1b0d9b47f8e46014fd438e8dcaee8b292796b8d0d086cb8d36836a0be7d3da97c7d92133e42240e24dcc2171d26c018c3dc2a3a271adf  hanoip-ml-chrony
 fb9b0f62de9f74cf57ffde5efa25b0484852ead3de09fedb2eb754b39af75f6346533bcc09dfc370e1f3e013fe3f33f1e13b5d1440321cd652c83346a27d01fc  90-hanoip-watchdog.conf
 fc7ae62bf0f2e70299a2b35098ea42d7b5b7fa5729ed93ab5be6705c725481fe38f0a95d29558f1f59421922d375ce970fb0cf9ec6e6a08bb0a17401f89e7785  hanoip-ml-abl-slot

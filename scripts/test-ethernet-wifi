@@ -113,4 +113,41 @@ FAKE_IPV4=1 FAKE_ROUTE=1 run "1 1 1 1 1 1 0 0 0 0 0 0"
 FAKE_IPV4=1 FAKE_ROUTE=1 run "1 1 1 1 0 1 1 1 1 0 1 1 1 1 0 1 1 1 1 0"
 [ ! -s "$calls" ] || fail "a flapping link toggled Wi-Fi: $(cat "$calls" | tr '\n' ' ')"
 echo "behaviour: ok"
+
+# --- 3. The hub's Ethernet gets an address (found 2026-11-24 with the WCH 1a86:e398 hub, issue #41) ---
+# Bug 1: NetworkManager gave eth0 a random MAC (the image's 50-random-mac.conf says ethernet.cloned-mac-address=stable); the
+# chip, in NCM, drops frames for a MAC that is not its own, so DHCP never got an offer. The package's conf.d file must
+# win over the image's one, and it sorts later by name (NetworkManager merges /usr/lib and /etc by file name).
+# Bug 2: wlan0 answered the ARP probe for eth0's address (same subnet), NetworkManager read it as a conflict, eth0 got no
+# route and Wi-Fi was never switched off. arp_ignore=1 makes an interface answer only for its own addresses.
+nmconf=$pkg/hanoip-ml-networkmanager.conf
+sysctlconf=$pkg/hanoip-arp.conf
+# conf_get FILE SECTION KEY: the value of KEY in [SECTION] of an ini file, empty when it is not set.
+conf_get() { awk -v s="[$2]" -v k="$3" '/^\[/ { in_s = ($0 == s) } in_s && index($0, k "=") == 1 { v = substr($0, length(k) + 2) } END { print v }' "$1"; }
+mkdir -p "$tmp/nm"
+cat > "$tmp/nm/50-random-mac.conf" <<'EOF'
+[device]
+wifi.scan-rand-mac-address=yes
+[connection]
+wifi.cloned-mac-address=stable
+ethernet.cloned-mac-address=stable
+EOF
+cp "$nmconf" "$tmp/nm/hanoip-ml.conf"
+mac=
+for f in $(ls "$tmp/nm" | LC_ALL=C sort); do
+	v=$(conf_get "$tmp/nm/$f" connection ethernet.cloned-mac-address)
+	[ -z "$v" ] || mac=$v
+done
+[ "$mac" = permanent ] || fail "eth0 would get a '$mac' MAC address (the WCH chip in NCM needs its own: ethernet.cloned-mac-address=permanent in $nmconf)"
+[ -f "$sysctlconf" ] || fail "$sysctlconf is missing (wlan0 answers the ARP probe for eth0's address and NetworkManager reads it as a conflict)"
+[ "$(grep -cE '^net\.ipv4\.conf\.all\.arp_ignore *= *1$' "$sysctlconf")" = 1 ] || fail "$sysctlconf does not set net.ipv4.conf.all.arp_ignore = 1"
+grep -qE '^[[:space:]]+hanoip-arp\.conf$' "$apk" || fail "hanoip-arp.conf is not in source= of $apk"
+h=$(sha512sum "$sysctlconf" | cut -d' ' -f1)
+grep -qF "$h  hanoip-arp.conf" "$apk" || fail "sha512sums of $apk does not match hanoip-arp.conf"
+h=$(sha512sum "$nmconf" | cut -d' ' -f1)
+grep -qF "$h  hanoip-ml-networkmanager.conf" "$apk" || fail "sha512sums of $apk does not match hanoip-ml-networkmanager.conf"
+grep -qF 'install -Dm644 "$srcdir/hanoip-arp.conf" "$pkgdir/etc/sysctl.d/90-hanoip-arp.conf"' "$apk" \
+	|| fail "package() does not install hanoip-arp.conf as /etc/sysctl.d/90-hanoip-arp.conf"
+awk '/^mainline\(\)/,/^}/' "$apk" | grep -qF 'etc/sysctl.d/90-hanoip-arp.conf' || fail "mainline() does not move /etc/sysctl.d/90-hanoip-arp.conf"
+echo "hub ethernet addressing: ok"
 echo "ethernet wifi: ok"

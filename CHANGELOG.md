@@ -14,6 +14,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 - Subnet route to the home LAN: the phone advertises the LAN to the tailnet, so the router's admin page opens from a phone on the cellular network. `52_hanoip-tailscale.nft` forwards from `tailscale0` and the replies from `eth*`, and `device-motorola-hanoip` (pkgrel 58) removes the hand-made `53_hanoip-tailscale-forward.nft` on install and upgrade. Checked by the owner on 2026-11-14 (`docs/HOMELAB.md`, "Reaching the home LAN from the tailnet"); `scripts/test-firewall` checks the rule without the phone.
 
 ### Fixed
+- The Bridgesil hub's Ethernet (WCH `1a86:e398`) gets an address: `eth0` keeps the chip's own MAC (NetworkManager's random one made it drop every reply, so DHCP failed) and `arp_ignore=1` stops `wlan0` from answering the ARP probe for `eth0`'s address (NetworkManager read it as a conflict, `eth0` got no route and Wi-Fi stayed on). Tested without the phone (`scripts/test-ethernet-wifi`); both settings were also tried by hand on the phone, the package itself is not installed there yet (#41)
 - `tailscaled` starts after `nftables.service` (a systemd drop-in in `device-motorola-hanoip`): a reload of nftables wipes the `ts-forward` chains Tailscale adds, and the subnet route stopped working until `tailscaled` was restarted. `scripts/test-firewall` checks the drop-in and its install line.
 
 ## [1.0.1] - 2026-11-14
