@@ -11,6 +11,7 @@ Up to v0.1.14 the notes lived only in the message of each annotated tag; this fi
 ## [Unreleased]
 
 ### Added
+- `kernel/mainline/dts/sm7150-motorola-hanoip-server.dts` and `scripts/build-server-dtb`: the server's device tree, built from U-Boot's chain at `clusteridle-venus` with the sound card, the audio codecs, the camera sensors and the NFC controller left out, the USB 3 PHY on (the hub ran at USB 2.0, about 300 Mbit/s at most) and the caches described, so `lstopo` and `lscpu` can print their sizes. Tested without the phone (`scripts/test-server-dtb`); not booted yet, the way to get it onto the phone is open (#41)
 - Subnet route to the home LAN: the phone advertises the LAN to the tailnet, so the router's admin page opens from a phone on the cellular network. `52_hanoip-tailscale.nft` forwards from `tailscale0` and the replies from `eth*`, and `device-motorola-hanoip` (pkgrel 58) removes the hand-made `53_hanoip-tailscale-forward.nft` on install and upgrade. Checked by the owner on 2026-11-14 (`docs/HOMELAB.md`, "Reaching the home LAN from the tailnet"); `scripts/test-firewall` checks the rule without the phone.
 
 ### Fixed
