@@ -63,4 +63,14 @@ cmp -s -n 4096 "$dir/u.img" "$dir/a.img" || fail "U-Boot is not at the start"
 [ "$(tail -c +$((16 * 1048576 + 1)) "$dir/a.img" | cmp -s - "$dir/k.img" && echo same)" = same ] || fail "the kernel image is not at 16 MiB"
 { printf 'ANDROID!'; head -c $((32 * 1048576)) /dev/zero; } > "$dir/big.img"
 if UBOOT_IMG=$dir/u.img KERNEL_IMG=$dir/big.img sh "$img" "$dir/b.img" >/dev/null 2>&1; then fail "a kernel image over 32 MiB was packed"; fi
+# A build with HANOIP_UBOOT_DT (a variant) must never write the production image, the file that goes to boot_a: the first variant,
+# DT sm7150-motorola-hanoip-server, got the name u-boot-hanoip-server.img and overwrote it (2026-11-24).
+b=${BUILD_SCRIPT:-scripts/build-mainline-uboot}
+grep -qx 'img=u-boot-hanoip-server.img' "$b" || fail "the production image is no longer out/u-boot-hanoip-server.img"
+v=$(sed -n 's/^[[:space:]]*o=\$u\/obj-\$n; img=\(u-boot-[^;]*\);.*/\1/p' "$b" | sed 's/\$n/server/')
+[ -n "$v" ] || fail "the variant image name is not set in $b"
+[ "$v" != u-boot-hanoip-server.img ] || fail "a variant build with the DT named 'server' writes out/u-boot-hanoip-server.img, the production image"
+# U-Boot 2026.01's mkimage signs with OpenSSL ENGINE, which OpenSSL 4 dropped: with libcrypto in the host tools the build stops at the link
+# step (undefined reference to ENGINE_load_builtin_engines, 2026-11-24). The target image does not use them.
+grep -qF '# CONFIG_TOOLS_LIBCRYPTO is not set' "$b" && grep -qF '# CONFIG_TOOLS_KWBIMAGE is not set' "$b" || fail "$b builds the host tools with libcrypto, which does not link against OpenSSL 4"
 echo "ok    test-mainline-uboot"
