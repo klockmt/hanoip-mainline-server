@@ -4,7 +4,7 @@
 pkgname=device-motorola-hanoip
 pkgdesc="Motorola Moto G (60)"
 pkgver=0
-pkgrel=60
+pkgrel=61
 _qrtr_rev=29e36ae164389580a0f8ea7a7fdb728140ae978d
 _pdmapper_rev=5ecd2fe926aca7abfe40724177f63b942cff3947
 url="https://postmarketos.org"
@@ -97,6 +97,7 @@ source="
 	hanoip-arp.conf
 	hanoip-ml-chrony
 	90-hanoip-watchdog.conf
+	90-hanoip-path.conf
 	hanoip-ml-abl-slot
 	hanoip-ml-charge
 	hanoip-ml.conf
@@ -217,6 +218,7 @@ package() {
 	install -Dm644 "$srcdir/hanoip-arp.conf" "$pkgdir/etc/sysctl.d/90-hanoip-arp.conf"
 	install -Dm755 "$srcdir/hanoip-ml-chrony" "$pkgdir/etc/NetworkManager/dispatcher.d/50-hanoip-ml-chrony"
 	install -Dm644 "$srcdir/90-hanoip-watchdog.conf" "$pkgdir/etc/systemd/system.conf.d/90-hanoip-watchdog.conf"
+	install -Dm644 "$srcdir/90-hanoip-path.conf" "$pkgdir/etc/systemd/system.conf.d/90-hanoip-path.conf"
 	install -Dm755 "$srcdir/hanoip-ml-abl-slot" "$pkgdir/usr/bin/hanoip-ml-abl-slot"
 	install -Dm755 "$srcdir/hanoip-ml-charge" "$pkgdir/usr/bin/hanoip-ml-charge"
 	install -Dm644 "$srcdir/hanoip-ml.conf" "$pkgdir/etc/modprobe.d/hanoip-ml.conf"
@@ -337,7 +339,7 @@ mainline() {
 		etc/systemd/system/hanoip-slot-mark.service etc/systemd/system/hanoip-bot.service \
 		etc/systemd/system/hanoip-guard.service etc/systemd/system/hanoip-deadman.service \
 		etc/systemd/system/hanoip-battery.service etc/systemd/system/hanoip-ml-up.service \
-		etc/systemd/system.conf.d/90-hanoip-watchdog.conf \
+		etc/systemd/system.conf.d/90-hanoip-watchdog.conf etc/systemd/system.conf.d/90-hanoip-path.conf \
 		usr/bin/hanoip-efs usr/bin/hanoip-modem-load-modules usr/bin/hanoip-modem-start \
 		usr/bin/hanoip-charge-pre usr/bin/hanoip-usb-net usr/bin/hanoip-ml-slot \
 		usr/bin/hanoip-guard usr/bin/hanoip-deadman usr/bin/hanoip-battery \
@@ -425,6 +427,7 @@ ace468554ecfaac9daef10e75acada7c9c9e5b76d818a4e0b4a31c47de62701da2013def363e37d7
 d3d72219d031741b5fe7b6fff6e771dc2b4fdcf5870dd5b3a27423f2ba900fc4abeab7f42afed33c3f765ff1ab9e149c0c02b487b73c44e860ef7d2ed72cb306  hanoip-arp.conf
 fe1de4984e9fbd01f2d1b0d9b47f8e46014fd438e8dcaee8b292796b8d0d086cb8d36836a0be7d3da97c7d92133e42240e24dcc2171d26c018c3dc2a3a271adf  hanoip-ml-chrony
 fb9b0f62de9f74cf57ffde5efa25b0484852ead3de09fedb2eb754b39af75f6346533bcc09dfc370e1f3e013fe3f33f1e13b5d1440321cd652c83346a27d01fc  90-hanoip-watchdog.conf
+5923c165cee28acf7f5a0aa1a277f76b4703cff6c1c5c9f957cd2d845773513423d42ab70d76f0daa19f40d8941ffbaa42563cf9b9c28d9fb2e7ab5161bd454a  90-hanoip-path.conf
 fc7ae62bf0f2e70299a2b35098ea42d7b5b7fa5729ed93ab5be6705c725481fe38f0a95d29558f1f59421922d375ce970fb0cf9ec6e6a08bb0a17401f89e7785  hanoip-ml-abl-slot
 ca85d44d47dfbf71723236f0ddc0d655da6d513584db3ab4b35ccfe98530ee796689bc88c2d59956a4b34f59c19b2f5e7a6375c1225d7e59f7328c46698d5c48  hanoip-ml-charge
 1e4e231251adc837fb9924251ded484329d4669a2ca43a6f00818ed45a72052bedd15e1e02620f601d1511e50714762da9a1f8669f457a645e6262dd35bc96bb  hanoip-ml.conf
