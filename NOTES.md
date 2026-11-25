@@ -260,3 +260,49 @@ Decisions, with the options that were left:
 - **What stopped the run:** writing `userdata` was refused by the tool's safety check ("irreversible"), and the project rule says to ask
   the user again before it. The phone was put back as found (boot_b restored from its backup, slot b active, the 4.14 server up) so the
   household's DNS and the shares are not down while waiting. Everything else is ready: see the state section of `docs/DURANIUM.md`.
+
+## The Bridgesil hub, the caches and USB 3 (2026-11-24, issues #41, #42, #43)
+
+- **The hub on the phone.** A USB-C hub (Bridgesil, a USB 2.1 hub `35d6:2510` and a USB 3 hub `35d6:3510`) with a WCH `1a86:e398` Ethernet
+  adapter, a PD charger on its own port. It does the data role swap itself, so a hub plugged into the running phone gets the host role.
+  The adapter comes up in NCM with `carrier=1` and `speed=1000`; the PC's trouble with NCM (no carrier, ECM needed) did not happen here.
+  The phone sinks PD at 5 V and charges at about 1 A into the battery with Ethernet in use (below the 75-80 % limiter; above it the status is
+  "Not charging" with the input feeding the phone, which is the limiter and not a fault).
+- **Two bugs kept eth0 from working** (both in `docs/PITFALLS.md`, test in `scripts/test-ethernet-wifi`): NetworkManager gave `eth0` a random
+  MAC and the chip drops frames for any other (DHCP never got an offer); and `wlan0` answered the ARP probe for `eth0`'s address on the shared
+  subnet, so NetworkManager saw a conflict and gave `eth0` no route (Wi-Fi was then never switched off). Found by reading the NetworkManager
+  journal: `conflict detected for IP address ... with host <the phone's own wlan0 MAC>`. Tried by hand first (a connection property in
+  memory with `nmcli connection modify --temporary`, then `sysctl net.ipv4.conf.all.arp_ignore=1`), then packaged in `pkgrel 59`.
+- **A third bug on the way:** after a hub, a PC on the cable got no `usb0`: `hanoip-usb-gadget` could not be restarted (`ln -sf` onto a link
+  that already points at a directory). `ln -sfn`, `pkgrel 60`.
+- **What "480" is:** the raw speed of the USB 2.0 link between the phone and the hub, not the internet plan. The `iperf3` runs never left the home network. Both ends of the cable negotiated 1000 Mbit/s full duplex (the notebook, and the adapter's Ethernet side); only its USB side runs at 480. A gigabit LAN end to end was not measured, because the other wired machine was always the phone: it needs `iperf3` between two fast wired hosts.
+- **Speed, measured with `iperf3` to a wired 1 Gbit/s notebook:** about 260 Mbit/s phone to notebook and 335 Mbit/s the other way, one or four
+  streams. That is the practical ceiling of USB 2.0 (480 Mbit/s raw): the hub and the adapter enumerate at 480 and the bus 2 (5000) of the
+  xHCI is empty, because the device tree limits the controller to `high-speed` and has no SuperSpeed PHY. Internet downloads from the phone
+  were not a usable measure: Cloudflare's test host answers 403 to `curl` and the OVH file throttles repeated pulls from one address (an
+  early "732 Mbit/s" was a miscount, above what USB 2.0 can carry, and was withdrawn). Not done: 10 and 100 Mbit/s (they need the far end
+  forced, and the notebook could not be put on the hub), and a repeated replug.
+- **The device tree the phone really runs.** Not the 7.3 kernel's `sm7150-motorola-hanoip.dtb`: U-Boot embeds `sm7150-motorola-hanoip-cam-tres`,
+  a chain of about 28 files in `hanoip-dts-cam-tres-delta.diff`, each layer including the one below (diagnostics, battery, `pmos-audio*`,
+  `pmos-perif*`, `clusteridle-*`, `audio-etapa*`, `cam-*`). Audio is added at `pmos-audio2` and `pmos-audio3`, the battery curve at
+  `battery-diagnostic` and `pmos-perif-batt`, the LEDs at `pmos-perif`, the cameras only above `clusteridle-venus`. The running DT differs from
+  the built `cam-tres` by 17 lines, all things U-Boot adds at boot: serial number, the MACs, `kaslr-seed`, the UEFI memory-map pointers,
+  the command line and `/chosen/u-boot,abl-bootargs`. That last one is where the slot scripts read the A/B slot, which is why a DTB must not go
+  into the UKI. `cpp -nostdinc -undef -x assembler-with-cpp -D__DTS__` plus `dtc` (no `-@`) rebuilds `cam-tres` byte for byte, which
+  `scripts/build-server-dtb` relies on.
+- **Caches.** On arm64 the kernel takes `size`, `coherency_line_size` and `number_of_sets` from the device tree, not from `CCSIDR_EL1`, so
+  `lstopo` and `lscpu` showed only levels. Values read with `kernel/mainline/tools/ccsidr_dump.c` (a module that returns an error from init
+  so nothing stays loaded) and cross-checked with `kernel/mainline/tools/cache_latency.c` (the steps of the curve land on the same sizes):
+  Silver (Kryo 470, Cortex-A55, cpu0-5) L1 32 KiB 4-way I and D, L2 128 KiB 4-way; Gold (Cortex-A76, cpu6-7) L1 64 KiB 4-way, L2 256 KiB
+  8-way; L3 1 MiB 16-way shared by all eight; lines of 64 bytes; `CCIDX` is 0. The vendor `atoll` tree has no cache sizes either.
+- **RAM boot of a U-Boot with another DT.** `HANOIP_UBOOT_DT=sm7150-motorola-hanoip-server scripts/build-mainline-uboot` then
+  `scripts/reboot-bootloader` and `fastboot boot out/u-boot-hanoip-dt-server.img`: back on SSH in about 35 s, nothing written. The fastboot cable
+  and the hub cannot share the single Type-C port, and `hanoip-usb-gadget` must have a bound UDC for the PC to see the phone (see above).
+  A reboot afterwards returns to the installed U-Boot. In the 7.3 log the QMP PHY (`phy-88e8000`) probes with no message at all.
+- **USB 3 does not link yet.** With the QMP PHY on and `maximum-speed = "super-speed"` the xHCI SuperSpeed port stays in `Link=RxDetect`
+  (`/sys/kernel/debug/usb/xhci/xhci-hcd.1.auto/ports/port02/portsc`) in both cable orientations, with the PHY runtime-active and its `usb3_pipe`
+  and `ref` clocks on. The patch `0075` reuses SDM845's init tables for the SM7150, which nobody has checked: that is the first suspect
+  (issue #42). U-Boot 2026.01 has no QMP USB 3 PHY driver, so a tree that turns the PHY on costs U-Boot its own gadget (issue #43).
+- **Mistakes worth keeping:** a variant U-Boot build named after its DT (`...-server`) overwrote the production `u-boot-hanoip-server.img`
+  in `out/`; every build embeds its date, so the old hash cannot be rebuilt (the phone's `boot_a`/`boot_b` and `$HANOIP_BACKUP_DIR` are the
+  reference), and variants are now `u-boot-hanoip-dt-<name>.img`. And `pkill -f 'iperf3 -s'` matches its own command line.
