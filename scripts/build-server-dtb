@@ -1,0 +1,22 @@
+#!/bin/sh
+# Builds the server's DTB (kernel/mainline/dts/sm7150-motorola-hanoip-server.dts) with cpp and dtc against U-Boot's tree of device
+# trees, the one the phone runs with (build-mainline-uboot applies the delta there). Nothing touches the phone.
+# Usage: scripts/build-server-dtb   (DRY_RUN=1 only prints)
+# Out:   $HANOIP_MAINLINE_DIR/out/sm7150-motorola-hanoip-server.dtb (default dir: $HANOIP_SRC_DIR/hanoip-mainline-7.3)
+set -eu
+. "$(dirname "$0")/env.sh"
+u=${HANOIP_UBOOT_ML_DIR:-$HANOIP_SRC_DIR/hanoip-uboot}
+out=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}/out
+dts=$u/git/dts/upstream
+qc=$dts/src/arm64/qcom
+src=$HANOIP_ROOT/kernel/mainline/dts/sm7150-motorola-hanoip-server.dts
+[ -f "$qc/sm7150-motorola-hanoip-clusteridle-venus.dts" ] || { echo "no U-Boot tree of device trees in $dts: run scripts/build-mainline-uboot first" >&2; exit 1; }
+run mkdir -p "$out"
+if [ -n "${DRY_RUN:-}" ]; then
+	echo "+ cpp -I $qc $src | dtc -I dts -O dtb -o $out/sm7150-motorola-hanoip-server.dtb"
+	exit 0
+fi
+# No -@: the phone's DTBs carry no symbols, and the U-Boot build of cam-tres is byte for byte what this pipeline gives.
+cpp -nostdinc -undef -x assembler-with-cpp -D__DTS__ -I "$dts/include" -I "$dts/src/arm64" -I "$qc" "$src" \
+	| dtc -q -I dts -O dtb -o "$out/sm7150-motorola-hanoip-server.dtb" -
+sha256sum "$out/sm7150-motorola-hanoip-server.dtb" | cut -c1-64 | sed 's/^/built sm7150-motorola-hanoip-server.dtb sha256 /'

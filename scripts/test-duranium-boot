@@ -42,6 +42,13 @@ g=$tmp/cfg/usb_gadget/hanoip
 [ -d "$g/functions/ncm.usb0" ] && [ -L "$g/configs/c.1/ncm.usb0" ] || fail "no NCM function linked into the configuration"
 [ "$(cat "$g/UDC")" = a600000.usb ] || fail "the gadget is not bound to the UDC"
 grep -qx 'ip addr add 172.16.42.1/24 dev usb0' "$calls" && grep -qx 'ip link set usb0 up' "$calls" || fail "usb0 has no address"
+# A restart (hanoip-usb-role watch runs `systemctl restart hanoip-usb-gadget` when a hub is unplugged): the link to the function is already
+# there, and `ln -sf` onto a link to a directory puts the new link inside that directory, which configfs refuses. After a hub on the
+# cable the PC then never got usb0 back until the next boot (2026-11-24, issue #41).
+: > "$calls"
+HANOIP_CONFIGFS=$tmp/cfg HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR=$tmp/net sh "$d/hanoip-usb-gadget" || fail "the gadget script failed on a restart"
+[ ! -e "$g/functions/ncm.usb0/ncm.usb0" ] || fail "a restart linked the NCM function into itself (ln -sf follows the old link: use ln -sfn)"
+[ -L "$g/configs/c.1/ncm.usb0" ] && [ "$(cat "$g/UDC")" = a600000.usb ] || fail "a restart left the gadget without its link or its UDC"
 rmdir "$tmp/udc/a600000.usb"
 if HANOIP_WAIT=0 HANOIP_CONFIGFS=$tmp/cfg2 HANOIP_UDC_DIR=$tmp/udc HANOIP_NETDIR=$tmp/net sh "$d/hanoip-usb-gadget" 2>/dev/null; then
 	fail "the gadget script succeeded without a UDC"

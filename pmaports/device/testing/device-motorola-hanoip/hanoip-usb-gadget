@@ -19,7 +19,7 @@ echo 0xd001 > "$cfg/idProduct"
 echo hanoip-duranium > "$cfg/strings/0x409/serialnumber"
 echo "hanoip duranium" > "$cfg/strings/0x409/product"
 echo ncm > "$cfg/configs/c.1/strings/0x409/configuration"
-ln -sf "$cfg/functions/ncm.usb0" "$cfg/configs/c.1/ncm.usb0"
+ln -sfn "$cfg/functions/ncm.usb0" "$cfg/configs/c.1/ncm.usb0"
 ls "$udcdir" | head -1 > "$cfg/UDC"
 i=0
 while [ ! -e "${HANOIP_NETDIR:-/sys/class/net}/usb0" ]; do

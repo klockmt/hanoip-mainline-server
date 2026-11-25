@@ -5,13 +5,16 @@
 # left running for the kernel, and still no flashing. Nothing touches the phone.
 # Usage: scripts/build-mainline-uboot   (tree in $HANOIP_UBOOT_ML_DIR, default $HANOIP_SRC_DIR/hanoip-uboot)
 # Out: $HANOIP_UBOOT_ML_DIR/out/u-boot-hanoip-server.img, an Android boot image header v3 for boot_a.
+# HANOIP_UBOOT_DT=sm7150-motorola-hanoip-server builds U-Boot with the server's device tree (kernel/mainline/dts) instead of
+# cam-tres, in its own object directory and as out/u-boot-hanoip-dt-<name>.img, so the image that is on the phone is never overwritten.
+# That image is for a RAM boot (fastboot boot): U-Boot has no driver for the USB 3 PHY, so its own USB gadget does not come up.
 set -eu
 . "$(dirname "$0")/env.sh"
 u=${HANOIP_UBOOT_ML_DIR:-$HANOIP_SRC_DIR/hanoip-uboot}
 BASE=f8c04469e8284aa2f1691a30aa3b7dc59fa0b8cd      # sm7150-mainline/u-boot, branch tauchgang
 BASE_TREE=d4ca1b8f873271528d3df2196c1db6d38521033d
 TREE=a38f1757adeb8ce1d8d0147de1a851a3b28d3f02      # + the two board diffs: the tree of the first validated build
-DT=sm7150-motorola-hanoip-cam-tres
+DT=${HANOIP_UBOOT_DT:-sm7150-motorola-hanoip-cam-tres}
 CC=${CROSS_COMPILE:-aarch64-linux-gnu-}
 ml=$HANOIP_ROOT/kernel/mainline/uboot
 mkdir -p "$u/out"
@@ -33,19 +36,31 @@ echo "source tree OK ($TREE)"
 cp "$ml/hanoip-server.env" "$u/git/board/qualcomm/hanoip-server.env"
 # The server's changes on top of the checked tree (the watchdog left running for the kernel).
 for p in "$ml"/*.patch; do git -C "$u/git" apply --whitespace=nowarn "$p"; done
+# The server's own device tree sources (they include U-Boot's chain, so they live next to it).
+cp "$HANOIP_ROOT"/kernel/mainline/dts/*.dts "$u/git/dts/upstream/src/arm64/qcom/"
 
 o=$u/obj
+img=u-boot-hanoip-server.img
+bin=u-boot.bin.gz
+sums=SHA256SUMS
+if [ "$DT" != sm7150-motorola-hanoip-cam-tres ]; then
+	n=${DT#sm7150-motorola-hanoip-}
+	o=$u/obj-$n; img=u-boot-hanoip-dt-$n.img; bin=u-boot-dt-$n.bin.gz; sums=SHA256SUMS-dt-$n
+fi
 mkdir -p "$o"
 sed "s|^CONFIG_DEFAULT_DEVICE_TREE=.*|CONFIG_DEFAULT_DEVICE_TREE=\"qcom/$DT\"|; s|^CONFIG_OF_LIST=.*|CONFIG_OF_LIST=\"qcom/$DT\"|" \
 	"$ml/base/base.config" > "$o/base.config"
-(cd "$u/git" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/base.config" "$ml/server.config" >/dev/null)
+# Host tools only (mkimage, fdt_add_pubkey): U-Boot 2026.01 signs with OpenSSL ENGINE, which OpenSSL 4 no longer has, so they
+# cannot link here. Nothing in the target image changes; mkimage just loses image signing, which this build never uses.
+printf '# CONFIG_TOOLS_LIBCRYPTO is not set\n# CONFIG_TOOLS_KWBIMAGE is not set\n' > "$o/hosttools.config"
+(cd "$u/git" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/base.config" "$o/hosttools.config" "$ml/server.config" >/dev/null)
 make -C "$u/git" O="$o" CROSS_COMPILE="$CC" olddefconfig >/dev/null
 grep -E '^(CONFIG_|# CONFIG_)' "$ml/server.config" | while read -r l; do
 	grep -qxF "$l" "$o/.config" || { echo "'$l' did not survive olddefconfig" >&2; exit 1; }
 done
 nice -n 10 make -C "$u/git" O="$o" CROSS_COMPILE="$CC" -j"$(nproc)" >/dev/null
-gzip -9n -c "$o/u-boot.bin" > "$u/out/u-boot.bin.gz"
-mkbootimg --header_version 3 --kernel "$u/out/u-boot.bin.gz" --os_version 14.0.0 --os_patch_level 2026-07 \
-	-o "$u/out/u-boot-hanoip-server.img"
-(cd "$u/out" && sha256sum u-boot.bin.gz u-boot-hanoip-server.img > SHA256SUMS)
-echo "built $u/out/u-boot-hanoip-server.img ($(wc -c < "$u/out/u-boot-hanoip-server.img") bytes)"
+gzip -9n -c "$o/u-boot.bin" > "$u/out/$bin"
+mkbootimg --header_version 3 --kernel "$u/out/$bin" --os_version 14.0.0 --os_patch_level 2026-07 \
+	-o "$u/out/$img"
+(cd "$u/out" && sha256sum "$bin" "$img" > "$sums")
+echo "built $u/out/$img ($(wc -c < "$u/out/$img") bytes)"

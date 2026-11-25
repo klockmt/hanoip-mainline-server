@@ -1,0 +1,57 @@
+#!/bin/sh
+# Checks the server's device tree (kernel/mainline/dts/sm7150-motorola-hanoip-server.dts) without the phone: the source says what it
+# must (no audio, no camera, USB 3 on, the caches described), and, when U-Boot's tree of device trees is on this PC, the DTB it builds
+# says the same. HANOIP_TEST_DTB=<file> runs only the DTB checks on that file (a DTB without the changes must fail them).
+set -eu
+cd "$(dirname "$0")/.."
+fail() { echo "FAIL: $*" >&2; exit 1; }
+dts=kernel/mainline/dts/sm7150-motorola-hanoip-server.dts
+
+# --- 1. The source ---
+if [ -z "${HANOIP_TEST_DTB:-}" ]; then
+	[ -f "$dts" ] || fail "$dts is missing"
+	grep -qxF '#include "sm7150-motorola-hanoip-clusteridle-venus.dts"' "$dts" \
+		|| fail "$dts does not start from clusteridle-venus (the layer below the audio and camera ones)"
+	! grep -E '^#include' "$dts" | grep -qE 'audio|cam-' || fail "$dts includes an audio or camera layer"
+	grep -qF 'qcom,select-utmi-as-pipe-clk' "$dts" || fail "$dts keeps the UTMI pipe clock (it must delete it for USB 3)"
+	echo "source: ok"
+fi
+
+# --- 2. The DTB ---
+dtb=${HANOIP_TEST_DTB:-}
+if [ -z "$dtb" ]; then
+	tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+	if ! HANOIP_MAINLINE_DIR=$tmp scripts/build-server-dtb >"$tmp/log" 2>&1; then
+		if grep -q 'no U-Boot tree' "$tmp/log"; then echo "dtb: skipped (no U-Boot tree of device trees on this PC)"; echo "server dtb: ok"; exit 0; fi
+		cat "$tmp/log" >&2; fail "scripts/build-server-dtb failed"
+	fi
+	dtb=$tmp/out/sm7150-motorola-hanoip-server.dtb
+fi
+[ -s "$dtb" ] || fail "no DTB to check"
+# get PATH PROP [TYPE]: a property of the DTB, empty when the node or the property is not there.
+get() { fdtget -t "${3:-s}" "$dtb" "$1" "$2" 2>/dev/null || true; }
+has() { fdtget -l "$dtb" "$1" >/dev/null 2>&1 || fdtget "$dtb" "$1" compatible >/dev/null 2>&1; }
+dwc3=/soc@0/usb@a6f8800/usb@a600000
+[ "$(get $dwc3 maximum-speed)" = super-speed ] || fail "the dwc3 is not at super-speed (the hub then runs at USB 2.0, about 300 Mbit/s at most)"
+[ "$(get $dwc3 phy-names)" = "usb2-phy usb3-phy" ] || fail "the dwc3 has no usb3-phy"
+[ "$(get /soc@0/phy@88e8000 status)" = okay ] || fail "the QMP USB 3 PHY is not enabled"
+! fdtget "$dtb" /soc@0/usb@a6f8800 qcom,select-utmi-as-pipe-clk >/dev/null 2>&1 || fail "the glue still takes its PIPE clock from the UTMI PHY"
+for n in /sound /audio-codec-0 /regulator-cam-rear-main-avdd /soc@0/camss@ace0000/ports/port@0/endpoint; do
+	! has "$n" || fail "$n is in the DTB (audio and camera are not for the server)"
+done
+# What the server still needs from the layers below the audio ones: the battery and the front LED.
+has /battery || fail "the battery node is gone (the fuel gauge needs it)"
+has /soc@0/spmi@c440000/pmic@5/led-controller@d300/led-2 || fail "the front LED node is gone"
+# The caches: sizes and lines for lstopo and lscpu. Silver (cpu0-5): L1 32 KiB, L2 128 KiB; Gold (cpu6-7): L1 64 KiB, L2 256 KiB.
+chk() { [ "$(get "$1" "$2" i)" = "$3" ] || fail "$1 $2 is '$(get "$1" "$2" i)', expected $3"; }
+for c in 0 100 200 300 400 500; do
+	chk /cpus/cpu@$c d-cache-size 32768; chk /cpus/cpu@$c i-cache-size 32768; chk /cpus/cpu@$c d-cache-line-size 64
+	chk /cpus/cpu@$c/l2-cache cache-size 131072; chk /cpus/cpu@$c/l2-cache cache-sets 512
+done
+for c in 600 700; do
+	chk /cpus/cpu@$c d-cache-size 65536; chk /cpus/cpu@$c i-cache-size 65536; chk /cpus/cpu@$c d-cache-sets 256
+	chk /cpus/cpu@$c/l2-cache cache-size 262144; chk /cpus/cpu@$c/l2-cache cache-sets 512
+done
+chk /cpus/cpu@0/l2-cache/l3-cache cache-size 1048576; chk /cpus/cpu@0/l2-cache/l3-cache cache-sets 1024
+echo "dtb: ok"
+echo "server dtb: ok"

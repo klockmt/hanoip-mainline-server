@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * The server's device tree for the hanoip.
+ *
+ * It starts from U-Boot's chain of device trees (kernel/mainline/uboot/base/hanoip-dts-cam-tres-delta.diff) at
+ * clusteridle-venus: the layer under the audio-etapa* and camera ones, so the codec, the sensors, their regulators and
+ * pins are not there. That layer still carries what the server uses (the battery curve, the LEDs, cluster idle) and,
+ * from lower layers, the sound card and the NFC controller, which are deleted below: a headless server uses neither.
+ *
+ * It then turns the USB 3 PHY on (issue #41: the hub ran at USB 2.0, about 300 Mbit/s at most) and describes the
+ * caches, which the base tree leaves out, so that lstopo and lscpu can print sizes.
+ *
+ * Built by scripts/build-server-dtb with the include path of U-Boot's tree.
+ */
+#include "sm7150-motorola-hanoip-clusteridle-venus.dts"
+
+/* No audio... */
+/delete-node/ &{/sound};
+/delete-node/ &{/audio-codec-dummy};
+/delete-node/ &{/soc@0/pinctrl@62b48000};
+/delete-node/ &{/soc@0/remoteproc@62400000/glink-edge/apr/service@4/dais/dai@18};
+/delete-node/ &{/soc@0/remoteproc@62400000/glink-edge/apr/service@7/dais/dai@0};
+/delete-node/ &{/soc@0/geniqup@8c0000/i2c@888000/audio-codec@34};
+/* ...and no NFC. */
+/delete-node/ &{/soc@0/geniqup@8c0000/i2c@888000/nfc@28};
+/delete-node/ &{/soc@0/pinctrl@3500000/nfc-int-active-state};
+/delete-node/ &{/soc@0/pinctrl@3500000/nfc-enable-active-state};
+
+/* USB 3: the QMP PHY, the SuperSpeed lanes of the dwc3 and the PIPE clock from that PHY (not from the UTMI one). */
+&usb_1 {
+	/delete-property/ qcom,select-utmi-as-pipe-clk;
+};
+
+&usb_1_dwc3 {
+	maximum-speed = "super-speed";
+	phys = <&usb_1_hsphy>, <&usb_1_qmpphy QMP_USB43DP_USB3_PHY>;
+	phy-names = "usb2-phy", "usb3-phy";
+};
+
+&usb_1_qmpphy {
+	status = "okay";
+};
+
+/*
+ * Caches, read from CLIDR_EL1 and CCSIDR_EL1 on the phone (2026-11-24); a pointer-chasing latency sweep on cpu0 and cpu7
+ * shows the same steps. Lines are 64 bytes everywhere. L3 is the DSU's, 1 MiB, shared by all eight cores.
+ *   Kryo 470 Silver (Cortex-A55, cpu0-5): L1 32 KiB 4-way I and D, L2 128 KiB 4-way
+ *   Kryo 470 Gold   (Cortex-A76, cpu6-7): L1 64 KiB 4-way I and D, L2 256 KiB 8-way
+ */
+#define SILVER_L1 \
+	i-cache-size = <32768>; i-cache-line-size = <64>; i-cache-sets = <128>; \
+	d-cache-size = <32768>; d-cache-line-size = <64>; d-cache-sets = <128>
+#define GOLD_L1 \
+	i-cache-size = <65536>; i-cache-line-size = <64>; i-cache-sets = <256>; \
+	d-cache-size = <65536>; d-cache-line-size = <64>; d-cache-sets = <256>
+#define SILVER_L2 cache-size = <131072>; cache-line-size = <64>; cache-sets = <512>
+#define GOLD_L2 cache-size = <262144>; cache-line-size = <64>; cache-sets = <512>
+
+&cpu0 { SILVER_L1; };
+&cpu1 { SILVER_L1; };
+&cpu2 { SILVER_L1; };
+&cpu3 { SILVER_L1; };
+&cpu4 { SILVER_L1; };
+&cpu5 { SILVER_L1; };
+&cpu6 { GOLD_L1; };
+&cpu7 { GOLD_L1; };
+
+&l2_0 { SILVER_L2; };
+&l2_100 { SILVER_L2; };
+&l2_200 { SILVER_L2; };
+&l2_300 { SILVER_L2; };
+&l2_400 { SILVER_L2; };
+&l2_500 { SILVER_L2; };
+&l2_600 { GOLD_L2; };
+&l2_700 { GOLD_L2; };
+
+&l3_0 {
+	cache-size = <1048576>;
+	cache-line-size = <64>;
+	cache-sets = <1024>;
+};
