@@ -13,7 +13,7 @@ set -eu
 u=${HANOIP_UBOOT_ML_DIR:-$HANOIP_SRC_DIR/hanoip-uboot}
 BASE=f8c04469e8284aa2f1691a30aa3b7dc59fa0b8cd      # sm7150-mainline/u-boot, branch tauchgang
 BASE_TREE=d4ca1b8f873271528d3df2196c1db6d38521033d
-TREE=a38f1757adeb8ce1d8d0147de1a851a3b28d3f02      # + the two board diffs: the tree of the first validated build
+TREE=4cdf58797b0ccf7044f070df20885d9acf10bdce      # + the two board diffs and the PMIC thermistor nodes (2026-11-28): built, not booted yet (the first validated build is a38f1757)
 DT=${HANOIP_UBOOT_DT:-sm7150-motorola-hanoip-cam-tres}
 CC=${CROSS_COMPILE:-aarch64-linux-gnu-}
 ml=$HANOIP_ROOT/kernel/mainline/uboot
