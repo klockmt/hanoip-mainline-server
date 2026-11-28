@@ -14,6 +14,14 @@ if [ -z "${HANOIP_TEST_DTB:-}" ]; then
 		|| fail "$dts does not start from clusteridle-venus (the layer below the audio and camera ones)"
 	! grep -E '^#include' "$dts" | grep -qE 'audio|cam-' || fail "$dts includes an audio or camera layer"
 	grep -qF 'qcom,select-utmi-as-pipe-clk' "$dts" || fail "$dts keeps the UTMI pipe clock (it must delete it for USB 3)"
+	# The PMIC thermistors: both ADC-TMs on, one thermal zone each with the name that hanoip-status reads.
+	for adctm in pm6150_adc_tm pm6150l_adc_tm; do
+		grep -A2 -F "&$adctm {" "$dts" | grep -qF 'status = "okay";' || fail "$dts does not enable &$adctm"
+	done
+	grep -qF 'ADC5_AMUX_THM4_100K_PU' "$dts" && grep -qF 'ADC5_GPIO4_100K_PU' "$dts" || fail "$dts has no thermistor channels (quiet_therm, nvm)"
+	for zone in quiet_therm nvm-therm-adc; do
+		grep -qE "^[[:space:]]+$zone \{" "$dts" || fail "$dts has no thermal zone $zone"
+	done
 	echo "source: ok"
 fi
 
@@ -53,5 +61,8 @@ for c in 600 700; do
 	chk /cpus/cpu@$c/l2-cache cache-size 262144; chk /cpus/cpu@$c/l2-cache cache-sets 512
 done
 chk /cpus/cpu@0/l2-cache/l3-cache cache-size 1048576; chk /cpus/cpu@0/l2-cache/l3-cache cache-sets 1024
+# The thermal zones that hanoip-status and the dashboard read (their zone names are the node names).
+has /thermal-zones/quiet_therm || fail "the DTB has no quiet_therm zone (the body temperature)"
+has /thermal-zones/nvm-therm-adc || fail "the DTB has no nvm-therm-adc zone (the ROM temperature)"
 echo "dtb: ok"
 echo "server dtb: ok"

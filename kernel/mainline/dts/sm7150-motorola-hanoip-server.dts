@@ -13,6 +13,7 @@
  * Built by scripts/build-server-dtb with the include path of U-Boot's tree.
  */
 #include "sm7150-motorola-hanoip-clusteridle-venus.dts"
+#include <dt-bindings/iio/qcom,spmi-vadc.h>
 
 /* No audio... */
 /delete-node/ &{/sound};
@@ -78,4 +79,78 @@
 	cache-size = <1048576>;
 	cache-line-size = <64>;
 	cache-sets = <1024>;
+};
+
+/*
+ * The two PMIC thermistors, through the ADC-TMs. The 4.14 tree read them on channel 0x50 (quiet-therm-adc: PM6150 AMUX_THM4)
+ * and 0x55 (nvm-therm-adc: PM6150L GPIO4, its pin gpio10 in high impedance). The thermal zone names are the ones that
+ * hanoip-status and the dashboard read. The conversion is the driver's 100k NTC table: not calibrated on this phone yet,
+ * and the nvm channel is not confirmed on hardware (the 4.14 numbers are the only evidence).
+ */
+&pm6150_adc {
+	channel@50 {
+		reg = <ADC5_AMUX_THM4_100K_PU>;
+		label = "quiet_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+};
+
+&pm6150_adc_tm {
+	status = "okay";
+
+	quiet-therm@0 {
+		reg = <0>;
+		io-channels = <&pm6150_adc ADC5_AMUX_THM4_100K_PU>;
+		qcom,ratiometric;
+		qcom,hw-settle-time-us = <200>;
+	};
+};
+
+&pm6150l_gpios {
+	nvm_therm_default: nvm-therm-default {
+		pins = "gpio10";
+		bias-high-impedance;
+	};
+};
+
+&pm6150l_adc {
+	pinctrl-names = "default";
+	pinctrl-0 = <&nvm_therm_default>;
+
+	channel@55 {
+		reg = <ADC5_GPIO4_100K_PU>;
+		label = "nvm_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+};
+
+&pm6150l_adc_tm {
+	status = "okay";
+
+	nvm-therm-adc@0 {
+		reg = <0>;
+		io-channels = <&pm6150l_adc ADC5_GPIO4_100K_PU>;
+		qcom,ratiometric;
+		qcom,hw-settle-time-us = <200>;
+	};
+};
+
+/ {
+	thermal-zones {
+		quiet_therm {
+			polling-delay-passive = <0>;
+			polling-delay = <0>;
+			thermal-sensors = <&pm6150_adc_tm 0>;
+			trips {};
+		};
+
+		nvm-therm-adc {
+			polling-delay-passive = <0>;
+			polling-delay = <0>;
+			thermal-sensors = <&pm6150l_adc_tm 0>;
+			trips {};
+		};
+	};
 };
