@@ -20,7 +20,7 @@ for f in system.uptime_s system.reboots system.oom_kills system.ram system.zram 
 	used_pct used_gb total_gb size_gb \
 	boot.slot boot.slot_successful \
 	storage.nas storage.nas.mounted storage.scrub.state storage.scrub.finished_at storage.scrub.errors \
-	network.wifi.up network.wifi.ssid network.tailscale.up network.samba_tailnet.active \
+	network.wifi.up network.wifi.ssid network.ethernet.up network.tailscale.up network.samba_tailnet.active \
 	services.sshd services.samba services.bot services.containers.running services.containers.names \
 	watchdog.last_feed_s_ago watchdog.resets version.kernel version.pkgrel status_text slow_at \
 	metrics.cpu.used_pct metrics.cpu.mhz_min metrics.cpu.mhz_max metrics.cpu.temp_c \
@@ -84,9 +84,18 @@ b.push(5);
 eq(JSON.stringify(b.values().map(function (x) { return isNaN(x) ? null : x; })), JSON.stringify([null, 0, 5]), 'buffer wraps at its length');
 eq(stats([null, 0, 4]).avg, 2, 'stats count 0 and skip null');
 eq(stats([null, null]), null, 'stats of nothing is null');
-var h = healthOf({ services: { sshd: 'active', bot: null }, network: { wifi: { up: false }, tailscale: { up: true } }, watchdog: { last_feed_s_ago: 75 }, system: { oom_kills: 0 } });
+var h = healthOf({ services: { sshd: 'active', bot: null }, network: { wifi: { up: false }, ethernet: { up: false }, tailscale: { up: true } }, watchdog: { last_feed_s_ago: 75 }, system: { oom_kills: 0 } });
 eq(h.total, 5, 'a null check is left out of the total');
 eq(h.names.join(','), 'Wi-Fi,watchdog', 'failing checks are named');
+var he = healthOf({ services: { sshd: 'active', bot: 'active' }, network: { wifi: { up: false }, ethernet: { up: true }, tailscale: { up: true } }, watchdog: { last_feed_s_ago: 5 }, system: { oom_kills: 0 } });
+eq(he.names.join(','), '', 'Wi-Fi off with Ethernet up is not a failing check');
+eq(he.ok, he.total, 'Wi-Fi off with Ethernet up counts as ok in the health score');
+var wp = function (wu, eu) { return JSON.stringify(wifiPill(wu, eu)); };
+eq(wp(true, false), JSON.stringify({ state: 'ok', text: 'Wi-Fi conectado' }), 'Wi-Fi up is unchanged');
+eq(wp(false, true), JSON.stringify({ state: 'off', text: 'Wi-Fi desligado (Ethernet)' }), 'Wi-Fi off with Ethernet up is neutral, not a fault');
+eq(wp(false, false), JSON.stringify({ state: 'bad', text: 'Wi-Fi caiu' }), 'Wi-Fi off with Ethernet not up is a fault');
+eq(wp(null, true), JSON.stringify({ state: 'na', text: 'Wi-Fi n/a' }), 'unknown Wi-Fi stays unknown');
+eq(wp(false, null), JSON.stringify({ state: 'na', text: 'Wi-Fi n/a' }), 'unknown Ethernet is not read as down');
 console.log('node: format and buffer functions ok');
 JS
 	} > "$pure"

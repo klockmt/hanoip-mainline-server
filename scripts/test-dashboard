@@ -1,6 +1,6 @@
 #!/bin/sh
 # Checks hanoip-dashboard without the phone: the JSON contract (names, types and the values read from fake /proc, /sys,
-# journal, nmcli, tailscale, systemctl, ss, btrfs and hanoip-status), the metrics parsed from the status text (4.14,
+# journal, nmcli, ip, tailscale, systemctl, ss, btrfs and hanoip-status), the metrics parsed from the status text (4.14,
 # mainline with n/a, nulls, garbage), the null of every unreadable field, the two routes
 # and the refused methods, the 4 s slow TTL (one run for two tabs, none before a request) and the address it binds to.
 # Section 6 checks the live figures (the fast part, deltas, the 0.9 s cache, the background slow refresh).
@@ -27,7 +27,7 @@ req() { "$py" -c "$REQ" "$@"; }
 
 export TEST_DIR=$dir
 bin=$dir/bin proc=$dir/proc sys=$dir/sys share=$dir/share nas=$dir/nas
-mkdir -p "$bin" "$proc" "$sys/block/zram0" "$sys/class/watchdog/watchdog0" "$share" "$nas"
+mkdir -p "$bin" "$proc" "$sys/block/zram0" "$sys/class/watchdog/watchdog0" "$sys/class/net/eth0" "$share" "$nas"
 
 # Fake commands: the same names the script calls, with fixed answers.
 cat > "$bin/journalctl" <<'EOF'
@@ -40,9 +40,19 @@ EOF
 cat > "$bin/nmcli" <<'EOF'
 #!/bin/sh
 case "$*" in
-*"device status"*) printf '%s\n' 'wlan0:connected' 'eth0:unavailable' ;;
-*"wifi list"*) printf '%s\n' 'no:other-net' 'yes:example\:net' ;;
+*"device status"*) printf '%s\n' "wlan0:${TEST_WLAN_STATE-connected}" 'eth0:unavailable' ;;
+*"wifi list"*) [ "${TEST_WLAN_STATE-connected}" != connected ] || printf '%s\n' 'no:other-net' 'yes:example\:net' ;;
 esac
+EOF
+# eth0 has a global IPv4 address and a default route only when the test sets them; TEST_ETH_IP_FAIL makes ip fail.
+cat > "$bin/ip" <<'EOF'
+#!/bin/sh
+[ -z "${TEST_ETH_IP_FAIL-}" ] || exit 1
+case "$*" in
+*"addr show dev eth0"*) [ -z "${TEST_ETH_ADDR-}" ] || echo "2: eth0    inet 192.0.2.20/24 scope global eth0" ;;
+*"route show default dev eth0"*) [ -z "${TEST_ETH_ROUTE-}" ] || echo "default via 192.0.2.1 dev eth0" ;;
+esac
+exit 0
 EOF
 cat > "$bin/tailscale" <<'EOF'
 #!/bin/sh
@@ -86,6 +96,7 @@ printf '%s' 'androidboot.foo=1 androidboot.slot_suffix=_b' > "$dir/abl-bootargs"
 printf '5583667200\n' > "$sys/block/zram0/disksize"
 printf '4096 59 20480 0 20480 0 0 0 0\n' > "$sys/block/zram0/mm_stat"
 printf '20\n' > "$sys/class/watchdog/watchdog0/timeout"
+printf '0\n' > "$sys/class/net/eth0/carrier"
 printf '15\n' > "$sys/class/watchdog/watchdog0/timeleft"
 printf '53\n' > "$share/pkgrel"
 echo "slot marked successful" > "$dir/health"
@@ -108,11 +119,36 @@ check "$dir/full.json" "d['status_text'] == 'Server - 0.9 ms\nCPU - 3 %'" "statu
 check "$dir/full.json" "d['system'] == {'uptime_s': 12345, 'reboots': 2, 'oom_kills': 2, 'ram': {'used_pct': 25, 'used_gb': 1.91, 'total_gb': 7.63}, 'zram': {'size_gb': 5.2, 'used_gb': 0.0}}" "system"
 check "$dir/full.json" "d['boot'] == {'slot': 'b', 'slot_successful': True}" "boot"
 check "$dir/full.json" "d['storage'] == {'nas': {'mounted': False, 'used_pct': None, 'used_gb': None, 'total_gb': None}, 'scrub': None}" "storage with the NAS disk away"
-check "$dir/full.json" "d['network'] == {'wifi': {'up': True, 'ssid': 'example:net'}, 'tailscale': {'up': True}, 'samba_tailnet': {'active': False}}" "network"
+check "$dir/full.json" "d['network'] == {'wifi': {'up': True, 'ssid': 'example:net'}, 'ethernet': {'up': False}, 'tailscale': {'up': True}, 'samba_tailnet': {'active': False}}" "network"
 check "$dir/full.json" "d['services'] == {'sshd': 'active', 'samba': 'inactive', 'bot': 'active', 'containers': {'running': 1, 'names': ['web', 'old']}}" "services"
 check "$dir/full.json" "d['watchdog'] == {'last_feed_s_ago': 5, 'resets': None}" "watchdog"
 check "$dir/full.json" "d['version'] == {'kernel': __import__('os').uname().release, 'pkgrel': '53'}" "version"
 echo "contract: ok"
+
+# 1b. Wi-Fi off on purpose and Ethernet up: the rule of hanoip-ethernet-wifi (carrier, a global IPv4 address and a
+# default route on eth0) decides it. A part missing is not up; an ip that fails is unknown, not down.
+printf '1\n' > "$sys/class/net/eth0/carrier"
+export TEST_WLAN_STATE=unavailable TEST_ETH_ADDR=1 TEST_ETH_ROUTE=1
+collect > "$dir/eth-up.json"
+check "$dir/eth-up.json" "d['network'] == {'wifi': {'up': False, 'ssid': None}, 'ethernet': {'up': True}, 'tailscale': {'up': True}, 'samba_tailnet': {'active': False}}" "Wi-Fi off with Ethernet up"
+unset TEST_ETH_ADDR
+collect > "$dir/eth-noaddr.json"
+check "$dir/eth-noaddr.json" "d['network']['ethernet'] == {'up': False}" "no IPv4 address on eth0 is not up"
+export TEST_ETH_ADDR=1
+unset TEST_ETH_ROUTE
+collect > "$dir/eth-noroute.json"
+check "$dir/eth-noroute.json" "d['network']['ethernet'] == {'up': False}" "no default route on eth0 is not up"
+export TEST_ETH_ROUTE=1
+printf '0\n' > "$sys/class/net/eth0/carrier"
+collect > "$dir/eth-nocarrier.json"
+check "$dir/eth-nocarrier.json" "d['network']['ethernet'] == {'up': False}" "no carrier is not up"
+printf '1\n' > "$sys/class/net/eth0/carrier"
+export TEST_ETH_IP_FAIL=1
+collect > "$dir/eth-noip.json"
+check "$dir/eth-noip.json" "d['network']['ethernet'] == {'up': None}" "ip that fails is unknown, not down"
+unset TEST_WLAN_STATE TEST_ETH_ADDR TEST_ETH_ROUTE TEST_ETH_IP_FAIL
+printf '0\n' > "$sys/class/net/eth0/carrier"
+echo "ethernet rule: ok"
 
 # 2. A mounted NAS disk: usage from statvfs, the scrub from btrfs (a scrub still running has no finish time).
 printf 'x %s btrfs rw 0 0\n' "$nas" > "$proc/mounts"
@@ -192,7 +228,7 @@ env PATH="$dir/empty" HANOIP_PROC_DIR="$dir/none" HANOIP_SYS_DIR="$dir/none" HAN
 check "$dir/empty.json" "d['status_text'] is None and all(v is None for g in d['metrics'].values() for v in (g.values() if isinstance(g, dict) else [g])) and d['at'] > 0 and d['slow_at'] > 0 and d['version']['kernel'] == __import__('os').uname().release" "time and kernel only; no status text, every metric null"
 check "$dir/empty.json" "d['system'] == {'uptime_s': None, 'reboots': None, 'oom_kills': None, 'ram': {'used_pct': None, 'used_gb': None, 'total_gb': None}, 'zram': {'size_gb': None, 'used_gb': None}}" "unreadable system fields are null"
 check "$dir/empty.json" "d['boot'] == {'slot': None, 'slot_successful': None} and d['storage'] == {'nas': None, 'scrub': None}" "unreadable boot and storage are null"
-check "$dir/empty.json" "d['network'] == {'wifi': {'up': None, 'ssid': None}, 'tailscale': {'up': None}, 'samba_tailnet': {'active': None}}" "unreadable network is null"
+check "$dir/empty.json" "d['network'] == {'wifi': {'up': None, 'ssid': None}, 'ethernet': {'up': None}, 'tailscale': {'up': None}, 'samba_tailnet': {'active': None}}" "unreadable network is null"
 check "$dir/empty.json" "d['services'] == {'sshd': None, 'samba': None, 'bot': None, 'containers': None} and d['watchdog'] == {'last_feed_s_ago': None, 'resets': None}" "unreadable services and watchdog are null"
 check "$dir/empty.json" "d['version']['pkgrel'] is None" "pkgrel without its file is null"
 echo "nulls: ok"

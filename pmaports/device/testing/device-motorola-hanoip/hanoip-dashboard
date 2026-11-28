@@ -207,6 +207,27 @@ def wifi():
     return {"up": up, "ssid": ssid}
 
 
+# The Ethernet device of hanoip-ethernet-wifi. That script reads it from HANOIP_WIFI_DEV; here that name is the Wi-Fi device.
+ETH = "eth0"
+
+
+@safe
+def ethernet_up():
+    """The rule of hanoip-ethernet-wifi's ready(): carrier, a global IPv4 address and a default route, all on eth0.
+    False when a part is missing; None when the answer cannot be read."""
+    if not os.path.isdir(f"{SYS}/class/net"):
+        return None
+    if (text(f"{SYS}/class/net/{ETH}/carrier") or "").strip() != "1":
+        return False
+    addr = run("ip", "-4", "-o", "addr", "show", "dev", ETH, "scope", "global")
+    if addr is None:
+        return None
+    if "inet " not in addr:
+        return False
+    route = run("ip", "-4", "route", "show", "default", "dev", ETH)
+    return None if route is None else bool(route.strip())
+
+
 @safe
 def tailscale_up():
     out = run("tailscale", "status", "--json")
@@ -486,7 +507,7 @@ def collect_slow():
         "reboots": reboots(),
         "boot": {"slot": boot_slot(), "slot_successful": slot_successful()},
         "storage": {"nas": nas_doc, "scrub": scrub() if mounted else None},
-        "network": {"wifi": wifi(), "tailscale": {"up": tailscale_up()},
+        "network": {"wifi": wifi(), "ethernet": {"up": ethernet_up()}, "tailscale": {"up": tailscale_up()},
                     "samba_tailnet": {"active": samba_active()}},
         "services": {"sshd": unit_state("sshd"), "samba": unit_state("smb"), "bot": unit_state("hanoip-bot"),
                      "containers": containers()},

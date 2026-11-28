@@ -41,8 +41,8 @@ its data on the Tailscale address only, port 8080:
   `hanoip-status` and the commands, at most every 10 s (`slow_at` in the JSON is when they were read). A request never
   waits for them after the first one; it gets the last result, and a refresh runs in the background only while a page asks.
 - `/api/status` is the JSON: the `/status` text, system (uptime, reboots, OOM kills, RAM, zram), boot (slot from the ABL,
-  and whether it is marked successful), storage (the NAS disk and its last scrub), network (Wi-Fi, Tailscale, Samba on
-  the tailnet), services, watchdog and versions (kernel and the package's pkgrel).
+  and whether it is marked successful), storage (the NAS disk and its last scrub), network (Wi-Fi, Ethernet (`network.ethernet.up`,
+  the rule of `hanoip-ethernet-wifi`), Tailscale, Samba on the tailnet), services, watchdog and versions (kernel and the package's pkgrel).
 - A field that cannot be read is `null` and the page shows `n/a`; nothing is approximated.
 - The address is read at start (`tailscale ip -4`), so nothing about it is written in the repo.
 - `hanoip-dashboard --data` prints the same JSON once, on the phone, for a check.

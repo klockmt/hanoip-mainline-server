@@ -251,7 +251,7 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			<div><dt>Watchdog</dt><dd><span class="pill" data-pill="chk4" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
 			<div><dt>Falta de memória</dt><dd><span class="pill" data-pill="chk5" data-s="na"><svg aria-hidden="true"><use href="#i-na"/></svg><span class="ptxt">n/a</span></span></dd></div>
 		</dl>
-		<p class="cap">Problema: SSH ou bot parados, Wi-Fi ou Tailscale fora, watchdog sem feed há mais de 60 s, ou algum processo morto por falta de memória.</p>
+		<p class="cap">Problema: SSH ou bot parados, Wi-Fi fora sem Ethernet, Tailscale fora, watchdog sem feed há mais de 60 s, ou algum processo morto por falta de memória.</p>
 	</section>
 
 	<section class="t" style="--i:1;--pw:1;--mw:2;--dw:3" aria-labelledby="h-bateria">
@@ -560,7 +560,8 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 		var f = get(d, 'watchdog.last_feed_s_ago'), o = get(d, 'system.oom_kills');
 		check('SSH', s == null ? null : svcState(s) === 'ok');
 		check('bot do Telegram', b == null ? null : svcState(b) === 'ok');
-		check('Wi-Fi', isBool(w) ? w : null);
+		var wf = wifiPill(w, get(d, 'network.ethernet.up')); // Wi-Fi off on purpose with Ethernet up is not a failure
+		check('Wi-Fi', wf.state === 'bad' ? false : wf.state === 'na' ? null : true);
 		check('Tailscale', isBool(t) ? t : null);
 		check('watchdog', isNum(f) ? f < WD_STALE_S : null);
 		check('falta de memória', isNum(o) ? o === 0 : null);
@@ -571,6 +572,13 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			if (c.state === 'ok') ok++; else names.push(c.label);
 		});
 		return { ok: ok, total: total, names: names, checks: checks };
+	}
+	// Wi-Fi off while Ethernet is up is the planned state (hanoip-ethernet-wifi), not a fault. Unknown stays n/a.
+	function wifiPill(wu, eu) {
+		if (wu === true) return { state: 'ok', text: 'Wi-Fi conectado' };
+		if (wu === false && eu === true) return { state: 'off', text: 'Wi-Fi desligado (Ethernet)' };
+		if (wu === false && eu === false) return { state: 'bad', text: 'Wi-Fi caiu' };
+		return { state: 'na', text: 'Wi-Fi n/a' };
 	}
 	/* pure:end */
 
@@ -829,8 +837,9 @@ h1, h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; line-h
 			errs === 0 ? 'nenhum' : isNum(errs) ? F0.format(errs) + ' erros' : NA);
 
 		// Network
-		var wu = get(d, 'network.wifi.up'), tu = get(d, 'network.tailscale.up'), sa = get(d, 'network.samba_tailnet.active');
-		pill('wifi', wu === true ? 'ok' : wu === false ? 'bad' : 'na', wu === true ? 'Wi-Fi conectado' : wu === false ? 'Wi-Fi caiu' : 'Wi-Fi n/a');
+		var wu = get(d, 'network.wifi.up'), eu = get(d, 'network.ethernet.up'), tu = get(d, 'network.tailscale.up'), sa = get(d, 'network.samba_tailnet.active');
+		var wf = wifiPill(wu, eu);
+		pill('wifi', wf.state, wf.text);
 		pill('ts', tu === true ? 'ok' : tu === false ? 'bad' : 'na', tu === true ? 'Tailscale no ar' : tu === false ? 'Tailscale fora' : 'Tailscale n/a');
 		pill('samba', sa === true ? 'ok' : sa === false ? 'off' : 'na', sa === true ? 'Samba no tailnet' : sa === false ? 'Samba fora do tailnet' : 'Samba n/a');
 		put('wifi.ssid', fText(get(d, 'network.wifi.ssid')));
