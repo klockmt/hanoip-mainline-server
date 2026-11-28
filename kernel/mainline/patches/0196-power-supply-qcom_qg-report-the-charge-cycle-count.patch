@@ -1,0 +1,200 @@
+From 16a97910b9ae49b831571a1d58d80115793c071d Mon Sep 17 00:00:00 2001
+From: hanoip <hanoip@localhost>
+Date: Sat, 28 Nov 2026 10:31:51 -0300
+Subject: [PATCH] power: supply: qcom_qg: count charge cycles per SOC bucket
+
+The status line and the dashboard read cycle_count. The 4.14 gauge keeps 8 cycle buckets in the SDAM at 0x58 (8 little-endian 16-bit counts) and counts one per bucket on each charge. Port that: restore the buckets at probe, count them from the charger state (STATUS and ONLINE) on each capacity read and at shutdown, write them back, and report their integer average.
+---
+ drivers/power/supply/qcom_qg.c | 128 +++++++++++++++++++++++++++++++++
+ 1 file changed, 128 insertions(+)
+
+diff --git a/drivers/power/supply/qcom_qg.c b/drivers/power/supply/qcom_qg.c
+index b57d51a31..786c5d280 100644
+--- a/drivers/power/supply/qcom_qg.c
++++ b/drivers/power/supply/qcom_qg.c
+@@ -31,6 +31,11 @@
+ /* SRAM offsets */
+ #define QG_SDAM_OCV_OFFSET		0x4c /* 4-byte 0x4c-0x4f */
+ #define QG_SDAM_LEARNED_CAPACITY_OFFSET	0x68 /* 2-byte 0x68-0x69 */
++#define QG_SDAM_CYCLE_COUNT_OFFSET	0x58 /* 8 cycle buckets, 2-byte each, 0x58-0x67 */
++#define QG_CYCLE_BUCKETS		8
++#define QG_CYCLE_BUCKET_SOC		(256 / QG_CYCLE_BUCKETS) /* SOC span of a bucket, 0..255 scale */
++/* shortcut: 200 cycles per bucket when the SDAM is empty or unreadable (an estimate, not a measurement), upgrade when the buckets are measured from this battery */
++#define QG_CYCLE_FALLBACK		200
+ 
+ /* Larger IR drops come from glitched current readings, not the battery */
+ #define QG_MAX_IR_DROP_UV		300000
+@@ -129,6 +134,13 @@ struct qcom_qg_chip {
+ 
+ 	struct nvmem_device *sdam;
+ 
++	/* Charge cycles per SOC bucket, as the 4.14 gauge counts them, and the flags that drive them */
++	u16 cycles[QG_CYCLE_BUCKETS];
++	bool cycles_restored;		/* the SDAM holds these counts, so they may be written back */
++	bool cycle_started[QG_CYCLE_BUCKETS];
++	u8 cycle_last_soc[QG_CYCLE_BUCKETS];
++	int cycle_last_bucket;
++
+ 	struct power_supply *batt_psy;
+ 	struct power_supply_battery_info *batt_info;
+ };
+@@ -413,6 +425,98 @@ static int qcom_qg_get_sdam_ocv(struct qcom_qg_chip *chip, int *uv)
+ 	return 0;
+ }
+ 
++/* Charge cycles, one count per SOC bucket as the 4.14 gauge keeps them (fg-alg.c, qpnp-qg.c). */
++static void qcom_qg_cycles_restore(struct qcom_qg_chip *chip)
++{
++	u8 data[QG_CYCLE_BUCKETS * 2];
++	u32 sum = 0;
++	int i, ret;
++
++	chip->cycle_last_bucket = -1;
++	ret = nvmem_device_read(chip->sdam, QG_SDAM_CYCLE_COUNT_OFFSET, sizeof(data), data);
++	chip->cycles_restored = ret == QG_CYCLE_BUCKETS * 2;
++	if (!chip->cycles_restored)
++		dev_warn(chip->dev, "cycle counts not read from the SDAM (%d)\n", ret);
++	for (i = 0; i < QG_CYCLE_BUCKETS; i++) {
++		chip->cycles[i] = chip->cycles_restored ? get_unaligned_le16(&data[2 * i]) : 0;
++		sum += chip->cycles[i];
++	}
++	if (!sum)
++		for (i = 0; i < QG_CYCLE_BUCKETS; i++)
++			chip->cycles[i] = QG_CYCLE_FALLBACK;
++}
++
++/* Count one more cycle in bucket id and write the buckets to the SDAM; RAM keeps the count only if the write works. */
++static void qcom_qg_cycles_store(struct qcom_qg_chip *chip, int id)
++{
++	u8 data[QG_CYCLE_BUCKETS * 2];
++	int i, ret;
++
++	chip->cycles[id]++;
++	if (chip->cycles_restored) {
++		/* All 8 buckets, not only id: the 200 shortcut would otherwise restore as 25 on the next boot. */
++		for (i = 0; i < QG_CYCLE_BUCKETS; i++)
++			put_unaligned_le16(chip->cycles[i], &data[2 * i]);
++		ret = nvmem_device_write(chip->sdam, QG_SDAM_CYCLE_COUNT_OFFSET, sizeof(data), data);
++		if (ret < 0) {
++			chip->cycles[id]--;
++			dev_err(chip->dev, "cycle count not stored (%d)\n", ret);
++		}
++	}
++}
++
++/*
++ * cycle_count_update of 4.14: a bucket starts while charging enters it; when the charge is done or the input is
++ * gone, each started bucket that the SOC has risen more than half a bucket past is counted once.
++ */
++static void qcom_qg_cycles_update(struct qcom_qg_chip *chip, int soc, bool charging, bool done, bool online)
++{
++	int i, id, soc255;
++
++	soc255 = DIV_ROUND_CLOSEST(soc * 255, 100);
++	id = soc255 / QG_CYCLE_BUCKET_SOC;
++	guard(mutex)(&chip->lock);
++	if (charging) {
++		if (!chip->cycle_started[id] && id != chip->cycle_last_bucket) {
++			chip->cycle_started[id] = true;
++			chip->cycle_last_soc[id] = soc255;
++		}
++	} else if (done || !online) {
++		for (i = 0; i < QG_CYCLE_BUCKETS; i++) {
++			if (!chip->cycle_started[i] || soc255 <= chip->cycle_last_soc[i] + QG_CYCLE_BUCKET_SOC / 2)
++				continue;
++			qcom_qg_cycles_store(chip, i);
++			chip->cycle_last_soc[i] = 0;
++			chip->cycle_started[i] = false;
++			chip->cycle_last_bucket = i;
++		}
++	}
++}
++
++/* The charger's STATUS and ONLINE, read through the battery supply the way qcom_qg_get_status reads STATUS. */
++static void qcom_qg_cycles_charger(struct qcom_qg_chip *chip, struct power_supply *psy, int soc)
++{
++	union power_supply_propval status, online;
++
++	if (power_supply_get_property_from_supplier(psy, POWER_SUPPLY_PROP_STATUS, &status) ||
++	    power_supply_get_property_from_supplier(psy, POWER_SUPPLY_PROP_ONLINE, &online))
++		return;
++	qcom_qg_cycles_update(chip, soc, status.intval == POWER_SUPPLY_STATUS_CHARGING,
++			      status.intval == POWER_SUPPLY_STATUS_FULL, online.intval);
++}
++
++/* Charge cycles: the integer average of the 8 buckets, as the 4.14 gauge reports it. */
++static int qcom_qg_get_cycle_count(struct qcom_qg_chip *chip)
++{
++	u32 sum = 0;
++	int i;
++
++	guard(mutex)(&chip->lock);
++	for (i = 0; i < QG_CYCLE_BUCKETS; i++)
++		sum += chip->cycles[i];
++	return sum / QG_CYCLE_BUCKETS;
++}
++
+ static int qcom_qg_get_capacity(struct qcom_qg_chip *chip,
+ 				struct power_supply *psy, int *val)
+ {
+@@ -562,6 +666,7 @@ static enum power_supply_property qcom_qg_props[] = {
+ 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+ 	POWER_SUPPLY_PROP_CHARGE_FULL,
+ 	POWER_SUPPLY_PROP_CAPACITY,
++	POWER_SUPPLY_PROP_CYCLE_COUNT,
+ 	POWER_SUPPLY_PROP_TEMP,
+ };
+ 
+@@ -636,6 +741,10 @@ static int qcom_qg_get_property(struct power_supply *psy,
+ 		ret = qcom_qg_get_capacity(chip, psy, &val->intval);
+ 		if (ret)
+ 			return ret;
++		qcom_qg_cycles_charger(chip, psy, val->intval);
++		break;
++	case POWER_SUPPLY_PROP_CYCLE_COUNT:
++		val->intval = qcom_qg_get_cycle_count(chip);
+ 		break;
+ 	case POWER_SUPPLY_PROP_TEMP:
+ 		ret = iio_read_channel_processed
+@@ -787,6 +896,7 @@ static int qcom_qg_probe(struct platform_device *pdev)
+ 		return dev_err_probe(chip->dev, PTR_ERR(chip->sdam),
+ 				     "Couldn't get SDAM nvmem device\n");
+ 
++	qcom_qg_cycles_restore(chip);
+ 	chip->msoc = -1;
+ 	ret = devm_mutex_init(chip->dev, &chip->lock);
+ 	if (ret)
+@@ -824,12 +934,30 @@ static const struct of_device_id qcom_qg_of_match[] = {
+ };
+ MODULE_DEVICE_TABLE(of, qcom_qg_of_match);
+ 
++/* 4.14 shutdown: with input present the charge is taken as done, and the buckets are counted once. */
++static void qcom_qg_shutdown(struct platform_device *pdev)
++{
++	struct qcom_qg_chip *chip = platform_get_drvdata(pdev);
++	union power_supply_propval online;
++	int soc = -1;
++
++	if (!chip || power_supply_get_property_from_supplier(chip->batt_psy, POWER_SUPPLY_PROP_ONLINE, &online) ||
++	    !online.intval)
++		return;
++	scoped_guard(mutex, &chip->lock) {
++		soc = chip->msoc;
++	}
++	if (soc >= 0)
++		qcom_qg_cycles_update(chip, soc, false, true, true);
++}
++
+ static struct platform_driver qcom_qg_driver = {
+ 	.driver = {
+ 		.name = "qcom,qcom_qg",
+ 		.of_match_table = qcom_qg_of_match,
+ 	},
+ 	.probe = qcom_qg_probe,
++	.shutdown = qcom_qg_shutdown,
+ };
+ 
+ module_platform_driver(qcom_qg_driver);
+-- 
+2.56.1
+

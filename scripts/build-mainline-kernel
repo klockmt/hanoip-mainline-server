@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Linux 7.3 for the hanoip: kernel.org's linux-7.3 plus the 195 patches in kernel/mainline/patches, with
+# Builds Linux 7.3 for the hanoip: kernel.org's linux-7.3 plus the 196 patches in kernel/mainline/patches, with
 # kernel/mainline/config-7.3-hanoip plus kernel/mainline/server.config, and the out-of-tree hanoip_mmi_unit_info
 # module (kernel/mainline/extra). Nothing touches the phone.
 # Usage: scripts/build-mainline-kernel   (tree in $HANOIP_MAINLINE_DIR, default $HANOIP_SRC_DIR/hanoip-mainline-7.3)
@@ -9,7 +9,7 @@ set -eu
 . "$(dirname "$0")/env.sh"
 k=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}
 BASE_TREE=30fd2ef82912c26cf3a58ad0ba6afc375fa851ac # git tree of tag v7.3
-TREE=398868f4629ed0d0e211f575957adaf24450eded      # v7.3 + kernel/mainline/patches: the tree that booted on the phone (images 26111302 and 26111303)
+TREE=e1896911a1d83689ddea9f2858debc272ea8f17f      # v7.3 + the 196 patches: built, not booted yet (the 195-patch tree, 398868f, is the one that booted: images 26111302 and 26111303)
 KORG=https://cdn.kernel.org/pub/linux/kernel/v7.x
 GIT="git -c user.name=hanoip -c user.email=hanoip@localhost -c core.autocrlf=false"
 ml=$HANOIP_ROOT/kernel/mainline
@@ -24,7 +24,7 @@ cd "$k/dl"
 [ -s sha256sums.asc ] || curl -fL --retry 3 -o sha256sums.asc "$KORG/sha256sums.asc"
 grep ' linux-7\.3\.tar\.xz$' sha256sums.asc | sha256sum -c -
 
-[ "$(ls "$ml"/patches/*.patch | wc -l)" -eq 195 ] || { echo "expected 195 patches in $ml/patches" >&2; exit 1; }
+[ "$(ls "$ml"/patches/*.patch | wc -l)" -eq 196 ] || { echo "expected 196 patches in $ml/patches" >&2; exit 1; }
 
 cd "$k"
 if [ ! -d linux/.git ]; then
