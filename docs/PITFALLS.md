@@ -90,6 +90,7 @@ Every bug gets an automated test that fails before the fix and passes after (`sc
 | Symptom | Cause | Rule | Where enforced |
 |---|---|---|---|
 | The page's numbers changed only every ~6 s although it polled every 5 s | One collection ran `hanoip-status` (5.4 s: three pings to the gateway, three to 1.1.1.1, 1 s of sampling) and the server cached the whole document for 4 s | The live figures are read in Python per request (at most 0.9 s old, deltas between cached samples). `hanoip-status` runs at most every 10 s and no request after the first one waits for it; the last result is served while a refresh runs | `scripts/test-dashboard` (section 6: the figures equal `hanoip-status`, the cache, the TTLs, a request during a refresh) |
+| `/status` and the dashboard showed the body at 27.6 °C on the mainline kernel, which is the PMIC die, not the case (2026-11-27) | With no `quiet_therm` zone (the 7.3 kernel has none) both fell back to `pm6150-thermal`, the PMIC's die temperature | Unknown is null: `n/a` in `hanoip-status`, `null` in the API. The body reads `quiet_therm` only, and no other sensor stands in for it until the device tree provides one | `scripts/test-status` (mainline fixture: `Body - n/a °C`), `scripts/test-dashboard` (section B: body null on mainline) |
 
 ## Packaging
 

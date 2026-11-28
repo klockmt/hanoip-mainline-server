@@ -2,7 +2,7 @@
 # Phone health in one screen, one group of values per line; `hanoip-status -h` says what each
 # line is and where it comes from. HANOIP_SYS_DIR replaces /sys, for tests (scripts/test-status).
 # shortcut: traffic is the rate over 1 s on the default route, not the link capacity.
-# shortcut: the body temperature is the quiet_therm sensor, which is the closest this board has.
+# shortcut: body is quiet_therm only; n/a until the board exposes it (needs the device tree, see PITFALLS).
 if [ "${1:-}" = -h ]; then
 	cat <<'EOF'
 One line each, in this order:
@@ -15,7 +15,7 @@ One line each, in this order:
 7. Battery: charge % (capacity), voltage (voltage_now), charge cycles (cycle_count, the average of the 8 buckets the PMIC keeps), temperature (temp).
 8. Battery power: the battery's own flow, |current_now| x voltage_now (as btop shows it), then charging or not charging, plus bypass when the charge limit stopped charging and the cable powers the phone.
 9. Energy drain: what the whole phone draws, and from where: cable (usb input_current_now x voltage_now) or battery (the same figure as line 8).
-10. Body: temperature of the quiet_therm sensor, the closest to the case.
+10. Body: temperature of the quiet_therm sensor (the case); n/a when the kernel has no such sensor. Never another sensor (the PMIC's pm6150-thermal is the die).
 Warning: an 11th line, shown only when /etc/resolv.conf points at Tailscale's DNS (100.100.100.100): the start of the DNS loop, fixed by tailscale set --accept-dns=false and resolvconf -u.
 EOF
 	exit 0
@@ -87,7 +87,7 @@ df -P / | awk -v temp="$(zones nvm-therm-adc)" 'NR==2{printf "ROM - %d %% | %.1f
 echo "Battery - $(cat $bat/capacity) % | $(awk -v v=$volt 'BEGIN{printf "%.2f", v/1e6}') V | $cycles cycles | $(awk '{printf "%.1f", $1/10}' $bat/temp) °C"
 echo "$batw | $charging"
 echo "Energy drain - $total"
-echo "Body - $(zones quiet_therm pm6150-thermal) °C"
+echo "Body - $(zones quiet_therm) °C"
 # HANOIP_RESOLV_CONF replaces /etc/resolv.conf, for tests.
 if grep -q '100\.100\.100\.100' "${HANOIP_RESOLV_CONF:-/etc/resolv.conf}" 2>/dev/null; then
 	echo "Warning - resolv.conf uses Tailscale's DNS (100.100.100.100): tailscale set --accept-dns=false, then resolvconf -u"
