@@ -37,7 +37,7 @@ makedepends="
 "
 
 _base_tree=30fd2ef82912c26cf3a58ad0ba6afc375fa851ac # git tree of tag v7.3
-_tree=398868f4629ed0d0e211f575957adaf24450eded      # v7.3 + the patches: the tree that booted on the phone (images 26111302 and 26111303)
+_tree=e1896911a1d83689ddea9f2858debc272ea8f17f      # v7.3 + the 196 patches: built, not booted yet (the 195-patch tree, 398868f, booted: images 26111302 and 26111303)
 source="
 	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-$pkgver.tar.xz
 	0001-FROMLIST-dt-bindings-cpufreq-qcom-hw-Add-the-SM7150-.patch
@@ -235,6 +235,7 @@ source="
 	0193-i2c-qcom-cci-reset-the-controller-on-runtime-resume.patch
 	0194-media-i2c-add-Motorola-hanoip-camera-sensor-and-VCM-.patch
 	0195-firmware-qcom-add-a-legacy-QSEECOM-transport-for-HLO.patch
+	0196-power-supply-qcom_qg-report-the-charge-cycle-count.patch
 	config-7.3-hanoip
 	server.config
 	Kbuild
@@ -484,6 +485,7 @@ aecc10a5db7319694d13b844c103fb63bc80a5a7a0a436d51506d48831721c0af822b36b349f5458
 9de9d52bc0453ffd11710de60617e25e63d92f5eef88b840b4ab364231883b189b834688c4387d5decabb5ceb89e4739093be64bb754413852575d072b1a07b5  0193-i2c-qcom-cci-reset-the-controller-on-runtime-resume.patch
 e5426e1efa4f3fe45bb8ebbc7370f62e20c8f1897edb5d1ffd6835d0ec3156a5604ae36164b77de7f0f56b5ee1498ddc58f75ce51a4865ded5b02aa6d761db27  0194-media-i2c-add-Motorola-hanoip-camera-sensor-and-VCM-.patch
 60176f56ea78c830b61dc672c9319019c9b4e0d35400614ad740fd646c95655ef9d8ff72b44b1b8901ee582ebf0d0ad755a3c9e36f3af4f90ecd01475a338a96  0195-firmware-qcom-add-a-legacy-QSEECOM-transport-for-HLO.patch
+07e47bed38c3abebe7c4e0e42ce27ec4af60d36da93736f3e1f495199cc86c75e33d33a1daf9ee1582b477944fe00ab9ec5a3f6df11195507453474463ffbac0  0196-power-supply-qcom_qg-report-the-charge-cycle-count.patch
 c4b1aa49449dc80b1b261f5853107791904ce2fdec9f7d5b1d54d2ca6764c9a4b89a107724274f142a51b9bdb4b4bef5a48e69df701f1e8e1f56cc6816489f04  config-7.3-hanoip
 b5a2841687f8fc0efcdca9cbf40986e1a4c29ccd3def54d893e91e2887f8f91e1bcb8786f4e3495e8584ea8ef4c330050db57b6a6aeb95060d8b4cc16c1bda91  server.config
 968fdec98e1b098e9f39e9ee9425fbbf5b41f29490be352b34c0497584fecaefbd683ad5abb353844119f621fa49f0145365e2831d51db692a4d04ff44cff659  Kbuild

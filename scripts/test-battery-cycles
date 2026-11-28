@@ -1,0 +1,323 @@
+#!/bin/sh
+# Checks the charge cycle counter of the mainline QGauge driver without the phone. The driver is rebuilt from the patch
+# series (only drivers/power/supply/qcom_qg.c); the cycle patch must apply with git am, its wiring must be in place, and
+# the bucket rules are run on the host against the 4.14 rules (fg-alg.c): the restore from the SDAM, the 200 shortcut
+# for an empty or unreadable SDAM, the count on the charge side, the write-back and the integer average. The fixture is
+# the bucket counts read on the phone (counts only). When this series is built in HANOIP_MAINLINE_DIR, the driver file is
+# also compiled in that kernel tree (skipped otherwise).
+set -eu
+cd "$(dirname "$0")/.."
+root=$(pwd)
+ml=$root/kernel/mainline/patches
+new=$ml/0196-power-supply-qcom_qg-report-the-charge-cycle-count.patch
+drv=drivers/power/supply/qcom_qg.c
+bad=0
+[ -f "$new" ] || { echo "FAIL: no $new" >&2; exit 1; }
+work=$(mktemp -d)
+trap 'find "$work" -depth -delete' EXIT
+who="-c user.name=test -c user.email=test@localhost"
+
+# check LABEL COMMAND...: one PASS or FAIL line; the run goes on after a failure.
+check() {
+	label=$1
+	shift
+	if "$@" >/dev/null 2>&1; then echo "PASS: $label"; else echo "FAIL: $label"; bad=1; fi
+}
+
+# The driver as the series leaves it: every patch that touches qcom_qg.c, in order, except the new one.
+git init -q "$work/tree"
+cd "$work/tree"
+for p in $(ls "$ml"/*.patch | LC_ALL=C sort); do
+	[ "$p" = "$new" ] && continue
+	if grep -q "$drv" "$p"; then
+		git apply --include=$drv "$p" || { echo "FAIL: $(basename "$p") does not apply to the QGauge driver"; exit 1; }
+	fi
+done
+git add -A
+git $who commit -q -m base
+if git $who am -q "$new" >"$work/am.log" 2>&1; then
+	echo "PASS: $(basename "$new") applies with git am on top of the series"
+else
+	echo "FAIL: $(basename "$new") does not apply with git am"
+	cat "$work/am.log"
+	exit 1
+fi
+f=$work/tree/$drv
+
+# Wiring: the property, the restore at probe, the 200 shortcut, the trigger, the write-back, shutdown, the average.
+check "property: POWER_SUPPLY_PROP_CYCLE_COUNT is listed" grep -qF 'POWER_SUPPLY_PROP_CYCLE_COUNT,' "$f"
+check "property: get_property reads the counter" grep -qF 'case POWER_SUPPLY_PROP_CYCLE_COUNT:' "$f"
+check "state: the buckets, their flags and the last bucket are kept in the chip" grep -qF 'int cycle_last_bucket;' "$f"
+check "restore: the 8 buckets are read from the SDAM" grep -qF 'nvmem_device_read(chip->sdam, QG_SDAM_CYCLE_COUNT_OFFSET' "$f"
+check "restore: probe restores before the power supply registers" awk '/qcom_qg_cycles_restore\(chip\);/{a=NR} /devm_power_supply_register\(/{b=NR} END{exit !(a && b && a < b)}' "$f"
+check "fallback: the 200 shortcut is marked as an estimate" grep -qF 'shortcut: 200 cycles per bucket' "$f"
+check "fallback: an empty or unreadable SDAM starts each bucket at 200" grep -qF 'cycles[i] = QG_CYCLE_FALLBACK' "$f"
+check "increment: the capacity read feeds the charger state to the counter" grep -qF 'qcom_qg_cycles_charger(chip, psy, val->intval)' "$f"
+check "increment: a bucket starts on charge and is counted on the charge side" grep -qF 'cycle_started[id] = true' "$f"
+check "increment: a counted bucket goes up by one" grep -qF 'chip->cycles[id]++' "$f"
+check "write-back: the 8 buckets are written to the SDAM" grep -qF 'nvmem_device_write(chip->sdam, QG_SDAM_CYCLE_COUNT_OFFSET' "$f"
+check "write-back: nothing is written after a failed restore" grep -qF 'if (chip->cycles_restored)' "$f"
+check "shutdown: the counter is fed when input is present" grep -qF '.shutdown = qcom_qg_shutdown' "$f"
+check "average: the reported value is the integer average of the 8 buckets" grep -qF '/ QG_CYCLE_BUCKETS' "$f"
+
+# The bucket rules, run on the host. The block is cut out of the patched driver; the SDAM, the supplier and the lock are
+# stand-ins. Without the restore and the trigger there is nothing to run.
+block=$work/block.c
+awk '/^\/\* Charge cycles/{p=1} /^static int qcom_qg_get_capacity\(/{p=0} p' "$f" > "$block"
+if grep -qF 'qcom_qg_cycles_update(' "$block" && grep -qF 'qcom_qg_cycles_restore(' "$block"; then
+	grep '^#define QG_CYCLE_\|^#define QG_SDAM_CYCLE_COUNT_OFFSET' "$f" > "$work/defs.h"
+	cat > "$work/pre.c" <<'EOF'
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+
+/* Values as in linux/power_supply.h. */
+#define POWER_SUPPLY_PROP_STATUS 1
+#define POWER_SUPPLY_PROP_ONLINE 2
+#define POWER_SUPPLY_STATUS_CHARGING 1
+#define POWER_SUPPLY_STATUS_DISCHARGING 2
+#define POWER_SUPPLY_STATUS_NOT_CHARGING 3
+#define POWER_SUPPLY_STATUS_FULL 4
+#define DIV_ROUND_CLOSEST(x, d) (((x) + ((d) / 2)) / (d))
+#define guard(x) harness_guard
+
+struct device { int unused; };
+struct nvmem_device { int unused; };
+struct power_supply { int unused; };
+struct mutex { int unused; };
+union power_supply_propval { int intval; };
+
+static u8 fake_sdam[256];
+static int fake_read_rc, fake_write_rc, writes, stub_status, stub_online;
+
+static void harness_guard(void *lock) { (void)lock; }
+static int nvmem_device_read(struct nvmem_device *nvmem, unsigned int offset, size_t bytes, void *buf)
+{
+	(void)nvmem;
+	if (fake_read_rc)
+		return fake_read_rc;
+	memcpy(buf, fake_sdam + offset, bytes);
+	return (int)bytes;
+}
+static int nvmem_device_write(struct nvmem_device *nvmem, unsigned int offset, size_t bytes, void *buf)
+{
+	(void)nvmem;
+	if (fake_write_rc)
+		return fake_write_rc;
+	memcpy(fake_sdam + offset, buf, bytes);
+	writes++;
+	return (int)bytes;
+}
+static int power_supply_get_property_from_supplier(struct power_supply *psy, int psp, union power_supply_propval *val)
+{
+	(void)psy;
+	val->intval = psp == POWER_SUPPLY_PROP_STATUS ? stub_status : stub_online;
+	return 0;
+}
+static u16 get_unaligned_le16(const void *p)
+{
+	const u8 *b = p;
+
+	return (u16)(b[0] | b[1] << 8);
+}
+static void put_unaligned_le16(u16 v, void *p)
+{
+	u8 *b = p;
+
+	b[0] = v & 0xff;
+	b[1] = v >> 8;
+}
+#define dev_err(dev, ...) do { (void)(dev); } while (0)
+#define dev_warn(dev, ...) do { (void)(dev); } while (0)
+EOF
+	cat > "$work/struct.c" <<'EOF'
+struct qcom_qg_chip {
+	struct device *dev;
+	struct nvmem_device *sdam;
+	struct mutex lock;
+	u16 cycles[QG_CYCLE_BUCKETS];
+	bool cycles_restored;
+	bool cycle_started[QG_CYCLE_BUCKETS];
+	u8 cycle_last_soc[QG_CYCLE_BUCKETS];
+	int cycle_last_bucket;
+};
+EOF
+	cat > "$work/main.c" <<'EOF'
+static int fails;
+static const u16 phone[8] = { 26, 61, 115, 151, 182, 171, 138, 86 };
+static const u16 zeros[8];
+static const u16 at_200[8] = { 200, 200, 200, 200, 200, 200, 200, 200 };
+static const u16 phone_cycled[8] = { 27, 62, 116, 152, 183, 172, 138, 86 };
+static const u16 phone_full[8] = { 27, 62, 116, 152, 183, 172, 139, 86 };
+static const u16 at_200_cycled[8] = { 201, 201, 201, 201, 201, 201, 200, 200 };
+
+static void expect(const char *what, int ok)
+{
+	printf("%s: %s\n", ok ? "PASS" : "FAIL", what);
+	if (!ok)
+		fails++;
+}
+static void put_sdam(const u16 *b)
+{
+	int i;
+
+	for (i = 0; i < 8; i++)
+		put_unaligned_le16(b[i], &fake_sdam[QG_SDAM_CYCLE_COUNT_OFFSET + 2 * i]);
+}
+static int sdam_is(const u16 *want)
+{
+	int i;
+
+	for (i = 0; i < 8; i++)
+		if (get_unaligned_le16(&fake_sdam[QG_SDAM_CYCLE_COUNT_OFFSET + 2 * i]) != want[i])
+			return 0;
+	return 1;
+}
+static int ram_is(const struct qcom_qg_chip *c, const u16 *want)
+{
+	int i;
+
+	for (i = 0; i < 8; i++)
+		if (c->cycles[i] != want[i])
+			return 0;
+	return 1;
+}
+static void fresh(struct qcom_qg_chip *c, const u16 *sdam_counts)
+{
+	memset(c, 0, sizeof(*c));
+	put_sdam(sdam_counts);
+	writes = 0;
+}
+static void step(struct qcom_qg_chip *c, int soc, int status, int online)
+{
+	stub_status = status;
+	stub_online = online;
+	qcom_qg_cycles_charger(c, NULL, soc);
+}
+static void charge(struct qcom_qg_chip *c, int from, int to)
+{
+	int s;
+
+	for (s = from; s <= to; s += 10)
+		step(c, s, POWER_SUPPLY_STATUS_CHARGING, 1);
+}
+static void charge_then_unplug(struct qcom_qg_chip *c)
+{
+	charge(c, 10, 80);
+	step(c, 80, POWER_SUPPLY_STATUS_DISCHARGING, 0);
+}
+
+int main(void)
+{
+	struct qcom_qg_chip c, again;
+
+	fresh(&c, phone);
+	qcom_qg_cycles_restore(&c);
+	expect("phone history: the 8 counts restore as read on the phone", ram_is(&c, phone) && c.cycles_restored);
+	expect("phone history: the reported value is the integer average, 116", qcom_qg_get_cycle_count(&c) == 116);
+	expect("phone history: restoring writes nothing", writes == 0);
+
+	fresh(&c, zeros);
+	qcom_qg_cycles_restore(&c);
+	expect("empty SDAM: every bucket starts at 200 (shortcut, not a measurement)", ram_is(&c, at_200));
+	expect("empty SDAM: the reported value is 200", qcom_qg_get_cycle_count(&c) == 200);
+	expect("empty SDAM: restoring does not write the estimate", writes == 0 && sdam_is(zeros));
+
+	fresh(&c, phone);
+	fake_read_rc = -5;
+	qcom_qg_cycles_restore(&c);
+	fake_read_rc = 0;
+	expect("unreadable SDAM: starts at 200 and is marked not restored", ram_is(&c, at_200) && !c.cycles_restored);
+	charge_then_unplug(&c);
+	expect("unreadable SDAM: a cycle is counted in RAM", ram_is(&c, at_200_cycled));
+	expect("unreadable SDAM: nothing is written, the phone history stays", writes == 0 && sdam_is(phone));
+
+	fresh(&c, phone);
+	qcom_qg_cycles_restore(&c);
+	charge_then_unplug(&c);
+	expect("one charge from 10% to 80%, then unplugged: buckets 0 to 5 count once", ram_is(&c, phone_cycled));
+	expect("the counted buckets are written to the SDAM", sdam_is(phone_cycled));
+	expect("one write per counted bucket (6)", writes == 6);
+	expect("the average after that cycle is 117", qcom_qg_get_cycle_count(&c) == 117);
+
+	fresh(&c, zeros);
+	qcom_qg_cycles_restore(&c);
+	charge_then_unplug(&c);
+	memset(&again, 0, sizeof(again));
+	qcom_qg_cycles_restore(&again);
+	expect("empty SDAM, one cycle, read back: the average stays 200, not 25", qcom_qg_get_cycle_count(&again) == 200 && ram_is(&again, at_200_cycled));
+
+	fresh(&c, phone);
+	qcom_qg_cycles_restore(&c);
+	charge(&c, 10, 60);
+	step(&c, 80, POWER_SUPPLY_STATUS_NOT_CHARGING, 1);
+	step(&c, 80, POWER_SUPPLY_STATUS_NOT_CHARGING, 1);
+	expect("held at the limit with input on (charging off): no count", ram_is(&c, phone) && writes == 0);
+
+	fresh(&c, phone);
+	qcom_qg_cycles_restore(&c);
+	charge(&c, 10, 80);
+	step(&c, 100, POWER_SUPPLY_STATUS_FULL, 1);
+	expect("charge done (FULL) counts the started buckets, 0 to 6", ram_is(&c, phone_full) && writes == 7);
+
+	fresh(&c, phone);
+	qcom_qg_cycles_restore(&c);
+	fake_write_rc = -5;
+	charge_then_unplug(&c);
+	fake_write_rc = 0;
+	expect("a failed write leaves RAM and the SDAM as they were", ram_is(&c, phone) && sdam_is(phone));
+
+	printf("%s\n", fails ? "battery cycle harness: FAILED" : "battery cycle harness: all checks pass");
+	return fails != 0;
+}
+EOF
+	cat "$work/pre.c" "$work/defs.h" "$work/struct.c" "$block" "$work/main.c" > "$work/harness.c"
+	if gcc -std=gnu11 -Wall -Wno-unused-function -Werror -o "$work/harness" "$work/harness.c" 2>"$work/cc.log"; then
+		"$work/harness" || bad=1
+	else
+		echo "FAIL: behaviour: the cycle block does not compile against the stand-ins"
+		cat "$work/cc.log"
+		bad=1
+	fi
+else
+	echo "FAIL: behaviour: no cycle restore or trigger in the driver, so the bucket rules cannot run (the increment and the 200 fallback are missing)"
+	bad=1
+fi
+
+# The driver compiled in the kernel tree, when this series is built there (build-mainline-kernel prints its TREE).
+kernel_compile() {
+	[ -f "$root/.env" ] || { echo "SKIP: compile of the driver in the kernel tree (no .env, so no kernel tree is known)"; return 0; }
+	. "$root/scripts/env.sh"
+	k=${HANOIP_MAINLINE_DIR:-$HANOIP_SRC_DIR/hanoip-mainline-7.3}
+	tree=$(sed -n 's/^TREE=\([0-9a-f]*\).*/\1/p' "$root/scripts/build-mainline-kernel")
+	if [ ! -f "$k/obj/.config" ] || [ ! -d "$k/linux/.git" ]; then
+		echo "SKIP: compile of the driver in the kernel tree (no kernel build in HANOIP_MAINLINE_DIR)"
+		return 0
+	fi
+	if [ "$(git -C "$k/linux" rev-parse 'HEAD^{tree}')" != "$tree" ]; then
+		echo "SKIP: compile of the driver in the kernel tree (the tree there is not this series)"
+		return 0
+	fi
+	if make -s -C "$k/linux" O="$k/obj" ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE:-aarch64-linux-gnu-} LOCALVERSION= drivers/power/supply/qcom_qg.o >"$work/cc-kernel.log" 2>&1; then
+		echo "PASS: qcom_qg.c compiles in the kernel tree"
+	else
+		echo "FAIL: qcom_qg.c does not compile in the kernel tree"
+		tail -20 "$work/cc-kernel.log"
+		bad=1
+	fi
+}
+cd "$root"
+kernel_compile
+
+if [ "$bad" -eq 0 ]; then
+	echo "battery cycle count: OK"
+else
+	echo "battery cycle count: FAILED" >&2
+	exit 1
+fi
