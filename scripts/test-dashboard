@@ -190,7 +190,7 @@ ROM - 1 % | 0.9/94.1 GB | n/a °C
 Battery - 77 % | 4.16 V | n/a cycles | 31.2 °C
 0.00 W | not charging • bypass
 Energy drain - 1.69 W • cable
-Body - n/a °C
+Body - 34.4 °C
 EOF
 cat > "$dir/fx-null" <<'EOF'
 Server - no reply | down  - no reply
@@ -214,7 +214,7 @@ metrics_of() {
 metrics_of "$dir/fx-414" "$dir/m414.json"
 check "$dir/m414.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 300, 'mhz_max': 2304, 'temp_c': 41.2}, 'gpu': {'used_pct': 12, 'mhz': 140, 'temp_c': 36.5, 'on': True}, 'ram_temp_c': 38.2, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': 34.7}, 'battery': {'pct': 81, 'volts': 4.33, 'cycles': 120, 'temp_c': 31.6, 'watts': 4.33, 'charging': True, 'bypass': False}, 'power': {'watts': 5.2, 'source': 'cable'}, 'body_temp_c': 34.4, 'net': {'iface': 'eth0', 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': 0.9, 'internet_host': '1.1.1.1', 'internet_ms': 4.5}}" "4.14 status fixture parsed"
 metrics_of "$dir/fx-ml" "$dir/mml.json"
-check "$dir/mml.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 1248, 'mhz_max': 1555, 'temp_c': 38.2}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 37.5, 'on': False}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': False, 'bypass': True}, 'power': {'watts': 1.69, 'source': 'cable'}, 'body_temp_c': None, 'net': {'iface': 'wlan0', 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': 64.3, 'internet_host': '1.1.1.1', 'internet_ms': 38.8}}" "mainline status fixture parsed (n/a fields null)"
+check "$dir/mml.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 1248, 'mhz_max': 1555, 'temp_c': 38.2}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 37.5, 'on': False}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': False, 'bypass': True}, 'power': {'watts': 1.69, 'source': 'cable'}, 'body_temp_c': 34.4, 'net': {'iface': 'wlan0', 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': 64.3, 'internet_host': '1.1.1.1', 'internet_ms': 38.8}}" "mainline status fixture parsed (n/a fields null)"
 metrics_of "$dir/fx-null" "$dir/mnull.json"
 check "$dir/mnull.json" "d['metrics'] == {'cpu': {'used_pct': None, 'mhz_min': 300, 'mhz_max': 300, 'temp_c': None}, 'gpu': {'used_pct': None, 'mhz': 0, 'temp_c': 36.2, 'on': None}, 'ram_temp_c': 37.5, 'rom': {'used_pct': 1, 'used_gb': 0.9, 'total_gb': 94.1, 'temp_c': None}, 'battery': {'pct': 77, 'volts': 4.16, 'cycles': None, 'temp_c': 31.2, 'watts': 0.0, 'charging': None, 'bypass': None}, 'power': {'watts': 1.69, 'source': None}, 'body_temp_c': None, 'net': {'iface': 'wlan0', 'rx_kbit': None, 'tx_kbit': None}, 'ping': {'gateway_ms': None, 'internet_host': 'down', 'internet_ms': None}}" "null fields stay null and the rest of each line is kept"
 metrics_of "$dir/fx-garbage" "$dir/mgarbage.json"
@@ -488,9 +488,9 @@ for name, layout, iface in (("4.14", layout_414, "eth0"), ("mainline", layout_ma
             continue
         if value != ref[key]:
             fail("%s: %s is %r, hanoip-status says %r" % (name, key, value, ref[key]))
-    # The body is quiet_therm only: the 4.14 has it, the mainline has none and must read null, not the PMIC's pm6150.
+    # The body is quiet_therm when it converts, else the PMIC die (pm6150-thermal, 34.4 on the mainline layout).
     want = {"cpu.used_pct": 42, "net.rx_kbit": 1000, "net.tx_kbit": 200, "net.iface": iface,
-            "body_temp_c": 34.4 if name == "4.14" else None}
+            "body_temp_c": 34.4}
     for key, value in want.items():
         if got[key] != value:
             fail("%s: %s is %r, want %r" % (name, key, got[key], value))

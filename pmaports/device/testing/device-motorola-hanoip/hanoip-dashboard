@@ -460,8 +460,8 @@ def fast_sample(prev, mono):
                     "temp_c": None if temp is None else float("%.1f" % (temp / 10)), "watts": batw,
                     "charging": charging, "bypass": bypass},
         "power": {"watts": watts, "source": source},
-        # shortcut: body is quiet_therm only; null until the board exposes it (needs the device tree, see PITFALLS).
-        "body_temp_c": zone_temp("quiet_therm"),
+        # shortcut: body is quiet_therm when it converts, else the PMIC die (pm6150-thermal): no case sensor converts on PM6150 yet (issue #44).
+        "body_temp_c": next((t for t in (zone_temp("quiet_therm"), zone_temp("pm6150-thermal")) if t is not None), None),
         "net": {"iface": iface, "rx_kbit": rx_kbit, "tx_kbit": tx_kbit},
     }
     doc = {"at": int(time.time()), "metrics": metrics_fast,
